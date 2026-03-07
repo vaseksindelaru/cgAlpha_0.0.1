@@ -20,6 +20,10 @@
             padding: 20px;
         }
 
+        body.ai-fullscreen-active {
+            overflow: hidden;
+        }
+
         .container {
             max-width: 900px;
             margin: 0 auto;
@@ -755,6 +759,18 @@
             border-radius: 50px;
         }
 
+        #ai-assistant.fullscreen {
+            top: 0;
+            right: 0;
+            bottom: 0;
+            left: 0;
+            width: 100vw;
+            height: 100dvh;
+            max-width: none;
+            border-radius: 0;
+            z-index: 3000;
+        }
+
         .ai-header {
             display: flex;
             align-items: center;
@@ -764,6 +780,10 @@
             user-select: none;
             gap: 10px;
             min-height: 52px;
+        }
+
+        #ai-assistant.fullscreen .ai-header {
+            border-radius: 0;
         }
 
         .ai-avatar {
@@ -835,11 +855,42 @@
             margin-left: 0;
         }
 
+        .ai-fullscreen-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            border-radius: 8px;
+            color: #fff;
+            padding: 4px 8px;
+            cursor: pointer;
+            font-size: 13px;
+            flex-shrink: 0;
+            transition: background 0.2s;
+        }
+
+        .ai-fullscreen-btn:hover {
+            background: rgba(255, 255, 255, 0.35);
+        }
+
         .ai-body {
             display: flex;
             flex-direction: column;
             height: 400px;
             background: #0f1b2d;
+        }
+
+        #ai-assistant.fullscreen .ai-body {
+            height: calc(100dvh - 52px);
+        }
+
+        #ai-assistant.fullscreen .ai-conversation-layout {
+            height: 100%;
+            min-height: 0;
+        }
+
+        #ai-assistant.fullscreen .ai-history-sidebar,
+        #ai-assistant.fullscreen .ai-chat-panel,
+        #ai-assistant.fullscreen .ai-messages {
+            min-height: 0;
         }
 
         #ai-assistant.collapsed .ai-body {
@@ -943,25 +994,163 @@
             flex-shrink: 0;
         }
 
+        .ai-conversation-layout {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+        }
+
+        .ai-history-sidebar {
+            display: none;
+            width: 260px;
+            min-width: 260px;
+            background: #0b1626;
+            border-right: 1px solid rgba(255, 255, 255, 0.08);
+            overflow-y: scroll;
+            padding: 10px;
+            scrollbar-gutter: stable;
+            scrollbar-width: thin;
+            scrollbar-color: #00d4aa66 #0b1626;
+        }
+
+        .ai-history-sidebar::-webkit-scrollbar {
+            width: 12px;
+            -webkit-appearance: none;
+        }
+
+        .ai-history-sidebar::-webkit-scrollbar-thumb {
+            background: #00d4aa66;
+            border-radius: 8px;
+            border: 2px solid #0b1626;
+            min-height: 32px;
+        }
+
+        .ai-history-sidebar::-webkit-scrollbar-track {
+            background: #0b1626;
+        }
+
+        #ai-assistant.fullscreen .ai-history-sidebar {
+            display: block;
+        }
+
+        .ai-history-title {
+            color: #9adbc8;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.2px;
+            margin-bottom: 8px;
+            position: sticky;
+            top: 0;
+            background: #0b1626;
+            padding-bottom: 6px;
+        }
+
+        .ai-history-toolbar {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 8px;
+            position: sticky;
+            top: 24px;
+            background: #0b1626;
+            padding-bottom: 6px;
+            z-index: 1;
+        }
+
+        .ai-history-new-btn {
+            flex: 1;
+            border: 1px solid rgba(0, 212, 170, 0.35);
+            background: #10253b;
+            color: #9df1dc;
+            border-radius: 8px;
+            font-size: 11px;
+            padding: 7px 8px;
+            cursor: pointer;
+        }
+
+        .ai-history-new-btn:hover {
+            background: #14314d;
+        }
+
+        .ai-history-conv-title {
+            font-size: 11px;
+            font-weight: 600;
+            margin-bottom: 3px;
+            color: #e6f8ff;
+        }
+
+        .ai-history-meta {
+            font-size: 10px;
+            opacity: 0.75;
+            margin-bottom: 2px;
+        }
+
+        .ai-history-item.active {
+            border-color: rgba(0, 212, 170, 0.7);
+            box-shadow: 0 0 0 1px rgba(0, 212, 170, 0.35) inset;
+            background: #1a3451;
+        }
+
+        .ai-history-item {
+            display: block;
+            width: 100%;
+            text-align: left;
+            background: #122137;
+            color: #cfe8ff;
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 8px;
+            padding: 7px 8px;
+            font-size: 11px;
+            line-height: 1.35;
+            margin-bottom: 6px;
+            cursor: pointer;
+        }
+
+        .ai-history-item:hover {
+            border-color: rgba(0, 212, 170, 0.35);
+            background: #172841;
+        }
+
+        .ai-history-role {
+            font-size: 10px;
+            opacity: 0.8;
+            margin-bottom: 2px;
+        }
+
+        .ai-chat-panel {
+            flex: 1;
+            min-width: 0;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
         /* Messages area */
         .ai-messages {
             flex: 1;
-            overflow-y: auto;
+            overflow-y: scroll;
             padding: 10px 12px;
             display: flex;
             flex-direction: column;
             gap: 10px;
+            scrollbar-gutter: stable;
             scrollbar-width: thin;
             scrollbar-color: #00d4aa22 transparent;
         }
 
         .ai-messages::-webkit-scrollbar {
-            width: 4px;
+            width: 8px;
+            -webkit-appearance: none;
         }
 
         .ai-messages::-webkit-scrollbar-thumb {
-            background: #00d4aa33;
+            background: #00d4aa66;
             border-radius: 4px;
+            border: 2px solid #0f1b2d;
+            min-height: 32px;
+        }
+
+        .ai-messages::-webkit-scrollbar-track {
+            background: #0f1b2d;
         }
 
         .ai-msg {
@@ -1266,6 +1455,8 @@
                 <div class="ai-header-title">Asistente CGAlpha</div>
                 <div class="ai-header-sub">Pregúntame cualquier cosa</div>
             </div>
+            <button class="ai-fullscreen-btn" id="ai-fullscreen-btn" onclick="event.stopPropagation(); aiToggleFullscreen()"
+                title="Pantalla completa">⛶</button>
             <button class="ai-toggle-btn" id="ai-collapse-btn" onclick="event.stopPropagation(); aiToggleCollapse()"
                 title="Minimizar">▼</button>
         </div>
@@ -1287,24 +1478,29 @@
                 <span class="ai-chip" id="ai-chip-clases">📄 Clases: 0</span>
                 <span class="ai-chip" id="ai-chip-extras">⭐ Extras: 0</span>
             </div>
-            <!-- Mensajes -->
-            <div class="ai-messages" id="ai-messages"></div>
-            <!-- Sugerencias rápidas -->
-            <div class="ai-suggestions" id="ai-suggestions">
-                <button class="ai-sugg-btn" onclick="aiQuick('¿Qué es el hito actual y cómo trabajarlo?')">🎯 Hito
-                    actual</button>
-                <button class="ai-sugg-btn" onclick="aiQuick('Explícame cómo funciona esta app')">📖 ¿Cómo
-                    funciona?</button>
-                <button class="ai-sugg-btn" onclick="aiQuick('Resúmeme el contenido de la última clase guardada')">📋
-                    Última clase</button>
-                <button class="ai-sugg-btn" onclick="aiQuick('Dame un ejercicio de práctica para el hito actual')">💡
-                    Ejercicio</button>
-            </div>
-            <!-- Input -->
-            <div class="ai-input-row">
-                <textarea id="ai-input" rows="1" placeholder="Pregúntame sobre el hito, la clase, la app…"
-                    onkeydown="aiKeyDown(event)"></textarea>
-                <button id="ai-send-btn" onclick="aiSend()" title="Enviar">➤</button>
+            <div class="ai-conversation-layout">
+                <aside class="ai-history-sidebar" id="ai-history-sidebar"></aside>
+                <div class="ai-chat-panel">
+                    <!-- Mensajes -->
+                    <div class="ai-messages" id="ai-messages"></div>
+                    <!-- Sugerencias rápidas -->
+                    <div class="ai-suggestions" id="ai-suggestions">
+                        <button class="ai-sugg-btn" onclick="aiQuick('¿Qué es el hito actual y cómo trabajarlo?')">🎯 Hito
+                            actual</button>
+                        <button class="ai-sugg-btn" onclick="aiQuick('Explícame cómo funciona esta app')">📖 ¿Cómo
+                            funciona?</button>
+                        <button class="ai-sugg-btn" onclick="aiQuick('Resúmeme el contenido de la última clase guardada')">📋
+                            Última clase</button>
+                        <button class="ai-sugg-btn" onclick="aiQuick('Dame un ejercicio de práctica para el hito actual')">💡
+                            Ejercicio</button>
+                    </div>
+                    <!-- Input -->
+                    <div class="ai-input-row">
+                        <textarea id="ai-input" rows="1" placeholder="Pregúntame sobre el hito, la clase, la app…"
+                            onkeydown="aiKeyDown(event)"></textarea>
+                        <button id="ai-send-btn" onclick="aiSend()" title="Enviar">➤</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -2301,7 +2497,10 @@ Guarda el resultado como markdown para que el estudiante lo pueda copiar.`;
         }
 
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') closeModal();
+            if (e.key === 'Escape') {
+                closeModal();
+                if (typeof aiState !== 'undefined' && aiState.fullscreen) aiToggleFullscreen(false);
+            }
         });
 
         document.getElementById('modal').addEventListener('click', (e) => {
@@ -2313,13 +2512,89 @@ Guarda el resultado como markdown para que el estudiante lo pueda copiar.`;
         /* ============================================================
            AGENTE ASISTENTE – Lógica completa
            ============================================================ */
-        const AI_STORAGE_KEY = 'cgalpha_ai_v1';
+        const AI_STORAGE_KEY = 'cgalpha_ai_v2';
         const AI_MODEL = 'gemini-3-flash-preview'; // ← Cambia el modelo aquí
         let aiState = {
             collapsed: false,
+            fullscreen: false,
             apiKey: '',
+            activeConversationId: null,
+            conversations: [],
             history: [], // {role:'user'|'assistant', text:'...'}
         };
+
+        function aiMakeConversationId() {
+            return `conv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        }
+
+        function aiBuildConversationTitle(seedText) {
+            const raw = String(seedText || '').replace(/\s+/g, ' ').trim();
+            if (!raw) return 'Nueva conversación';
+            return raw.slice(0, 38) + (raw.length > 38 ? '…' : '');
+        }
+
+        function aiGetActiveConversation() {
+            return aiState.conversations.find((c) => c.id === aiState.activeConversationId) || null;
+        }
+
+        function aiEnsureConversations() {
+            if (!Array.isArray(aiState.conversations)) aiState.conversations = [];
+
+            if (aiState.conversations.length === 0) {
+                aiState.conversations = [{
+                    id: aiMakeConversationId(),
+                    title: aiState.history.length > 0 ? aiBuildConversationTitle(aiState.history[0]?.text || '') : 'Nueva conversación',
+                    createdAt: nowIso(),
+                    updatedAt: nowIso(),
+                    history: Array.isArray(aiState.history) ? aiState.history.slice() : [],
+                }];
+            }
+
+            if (!aiState.activeConversationId || !aiState.conversations.some((c) => c.id === aiState.activeConversationId)) {
+                aiState.activeConversationId = aiState.conversations[0].id;
+            }
+
+            const active = aiGetActiveConversation();
+            aiState.history = active ? (active.history || []) : [];
+        }
+
+        function aiPersistActiveHistory() {
+            const active = aiGetActiveConversation();
+            if (!active) return;
+            active.history = aiState.history.slice();
+            active.updatedAt = nowIso();
+            if (!active.title || active.title === 'Nueva conversación') {
+                const firstUserMsg = aiState.history.find((m) => m.role === 'user')?.text || '';
+                if (firstUserMsg) active.title = aiBuildConversationTitle(firstUserMsg);
+            }
+        }
+
+        function aiCreateNewConversation() {
+            const conv = {
+                id: aiMakeConversationId(),
+                title: 'Nueva conversación',
+                createdAt: nowIso(),
+                updatedAt: nowIso(),
+                history: [],
+            };
+            aiState.conversations.unshift(conv);
+            aiState.activeConversationId = conv.id;
+            aiState.history = [];
+            aiSave();
+            aiRenderMessages();
+            aiUpdateContext();
+        }
+
+        function aiSwitchConversation(conversationId) {
+            const target = aiState.conversations.find((c) => c.id === conversationId);
+            if (!target) return;
+            aiPersistActiveHistory();
+            aiState.activeConversationId = conversationId;
+            aiState.history = (target.history || []).slice();
+            aiSave();
+            aiRenderMessages();
+            aiUpdateContext();
+        }
 
         // ---- Persistencia del asistente ----
         function aiLoad() {
@@ -2330,14 +2605,54 @@ Guarda el resultado como markdown para que el estudiante lo pueda copiar.`;
                     aiState = { ...aiState, ...parsed };
                 }
             } catch (_) { }
+            aiEnsureConversations();
         }
 
         function aiSave() {
+            aiPersistActiveHistory();
             localStorage.setItem(AI_STORAGE_KEY, JSON.stringify({
                 collapsed: aiState.collapsed,
+                fullscreen: aiState.fullscreen,
                 apiKey: aiState.apiKey,
-                history: aiState.history.slice(-40), // máx 40 mensajes guardados
+                activeConversationId: aiState.activeConversationId,
+                conversations: aiState.conversations
+                    .map((c) => ({
+                        ...c,
+                        history: (c.history || []).slice(-120),
+                    }))
+                    .slice(0, 40),
+                history: aiState.history.slice(-40), // compatibilidad legacy
             }));
+        }
+
+        function aiToggleFullscreen(forceValue) {
+            const el = document.getElementById('ai-assistant');
+            const btn = document.getElementById('ai-fullscreen-btn');
+            const bodyEl = document.body;
+            if (!el) return;
+
+            const nextValue = typeof forceValue === 'boolean' ? forceValue : !aiState.fullscreen;
+            aiState.fullscreen = nextValue;
+
+            if (aiState.fullscreen) {
+                el.classList.add('fullscreen');
+                if (bodyEl) bodyEl.classList.add('ai-fullscreen-active');
+                aiState.collapsed = false;
+                el.classList.remove('collapsed');
+                const collapseBtn = document.getElementById('ai-collapse-btn');
+                if (collapseBtn) collapseBtn.textContent = '▼';
+            } else {
+                el.classList.remove('fullscreen');
+                if (bodyEl) bodyEl.classList.remove('ai-fullscreen-active');
+            }
+
+            if (btn) {
+                btn.textContent = aiState.fullscreen ? '🗗' : '⛶';
+                btn.title = aiState.fullscreen ? 'Salir de pantalla completa' : 'Pantalla completa';
+            }
+
+            aiScrollToBottom();
+            aiSave();
         }
 
         // ---- Colapsar/expandir ----
@@ -2427,6 +2742,61 @@ Guarda el resultado como markdown para que el estudiante lo pueda copiar.`;
             if (cextrasEl) cextrasEl.textContent = `⭐ Extras: ${extraRecords.length}`;
         }
 
+        function aiRenderSidebar() {
+            const sidebar = document.getElementById('ai-history-sidebar');
+            if (!sidebar) return;
+
+            aiEnsureConversations();
+
+            const sortedConversations = aiState.conversations
+                .slice()
+                .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+
+            const convoItems = sortedConversations.map((conv) => {
+                const firstUserMsg = (conv.history || []).find((m) => m.role === 'user')?.text || '';
+                const preview = firstUserMsg
+                    ? String(firstUserMsg).replace(/\s+/g, ' ').trim().slice(0, 78)
+                    : 'Sin mensajes aún';
+                const dateLabel = conv.updatedAt ? new Date(conv.updatedAt).toLocaleString() : '';
+                const isActive = conv.id === aiState.activeConversationId ? ' active' : '';
+                return `
+                    <button class="ai-history-item${isActive}" onclick="aiSwitchConversation('${conv.id}')" title="Abrir conversación">
+                        <div class="ai-history-conv-title">${escapeHtml(conv.title || 'Nueva conversación')}</div>
+                        <div class="ai-history-meta">${escapeHtml(dateLabel)} · ${conv.history?.length || 0} mensajes</div>
+                        <div>${escapeHtml(preview)}${preview.length >= 78 ? '…' : ''}</div>
+                    </button>
+                `;
+            }).join('');
+
+            const active = aiGetActiveConversation();
+            const messageItems = (active?.history || []).map((msg, idx) => {
+                const role = msg.role === 'user' ? 'Tú' : 'Asistente';
+                const excerpt = String(msg.text || '').replace(/\s+/g, ' ').trim().slice(0, 95);
+                return `
+                    <button class="ai-history-item" onclick="aiScrollToMessage(${idx})" title="Ir al mensaje ${idx + 1}">
+                        <div class="ai-history-role">${role} · #${idx + 1}</div>
+                        <div>${escapeHtml(excerpt || '(vacío)')}</div>
+                    </button>
+                `;
+            }).join('');
+
+            sidebar.innerHTML = `
+                <div class="ai-history-title">Historial de conversaciones</div>
+                <div class="ai-history-toolbar">
+                    <button class="ai-history-new-btn" onclick="aiCreateNewConversation()">+ Nueva conversación</button>
+                </div>
+                ${convoItems || '<div class="ai-history-item" style="cursor:default;">No hay conversaciones.</div>'}
+                <div class="ai-history-title" style="margin-top:10px;">Conversación activa (${aiState.history.length})</div>
+                ${messageItems || '<div class="ai-history-item" style="cursor:default;">Sin mensajes aún.</div>'}
+            `;
+        }
+
+        function aiScrollToMessage(index) {
+            const el = document.getElementById(`ai-msg-${index}`);
+            if (!el) return;
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
         // ---- Renderizar mensajes ----
         function aiRenderMessages() {
             const container = document.getElementById('ai-messages');
@@ -2437,15 +2807,18 @@ Guarda el resultado como markdown para que el estudiante lo pueda copiar.`;
                 hint.className = 'ai-msg system-hint';
                 hint.textContent = '¡Hola! Soy tu asistente CGAlpha. Puedo explicarte el hito actual, la última clase, cómo funciona la app o responder cualquier duda de Python, matemáticas, trading o arquitectura. ¿En qué te ayudo?';
                 container.appendChild(hint);
+                aiRenderSidebar();
                 return;
             }
-            aiState.history.forEach(msg => {
+            aiState.history.forEach((msg, idx) => {
                 const div = document.createElement('div');
                 div.className = `ai-msg ${msg.role === 'user' ? 'user' : 'assistant'}`;
+                div.id = `ai-msg-${idx}`;
                 // Render básico: soportar negritas y código inline
                 div.innerHTML = aiFormatText(msg.text);
                 container.appendChild(div);
             });
+            aiRenderSidebar();
             aiScrollToBottom();
         }
 
@@ -2582,6 +2955,8 @@ Guarda el resultado como markdown para que el estudiante lo pueda copiar.`;
             const sendBtn = document.getElementById('ai-send-btn');
             if (!input) return;
 
+            aiEnsureConversations();
+
             const text = input.value.trim();
             if (!text) return;
 
@@ -2590,6 +2965,7 @@ Guarda el resultado como markdown para que el estudiante lo pueda copiar.`;
 
             // Agregar mensaje del usuario
             aiState.history.push({ role: 'user', text });
+            aiPersistActiveHistory();
             aiRenderMessages();
 
             // Deshabilitar input mientras procesa
@@ -2612,6 +2988,7 @@ Guarda el resultado como markdown para que el estudiante lo pueda copiar.`;
 
             // Agregar respuesta
             aiState.history.push({ role: 'assistant', text: response });
+            aiPersistActiveHistory();
             aiSave();
             aiRenderMessages();
 
@@ -2655,6 +3032,10 @@ Guarda el resultado como markdown para que el estudiante lo pueda copiar.`;
                 const btn = document.getElementById('ai-collapse-btn');
                 if (el) el.classList.add('collapsed');
                 if (btn) btn.textContent = '▲';
+            }
+
+            if (aiState.fullscreen) {
+                aiToggleFullscreen(true);
             }
 
             // Restaurar API Key en el input
