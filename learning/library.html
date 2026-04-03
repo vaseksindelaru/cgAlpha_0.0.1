@@ -72,10 +72,28 @@
         }
 
         .nav-btn.dashboard:hover {
+        a.nav-btn {
+            text-decoration: none;
+        }
             background: #1a1a2e;
+        a.nav-btn {
+            text-decoration: none;
+        }
             border-color: #00d4aa;
+        a.nav-btn {
+            text-decoration: none;
+        }
             transform: translateY(-2px);
+        a.nav-btn {
+            text-decoration: none;
+        }
             box-shadow: 0 0 15px rgba(0, 212, 170, 0.6);
+        a.nav-btn {
+            text-decoration: none;
+        }
+        }
+        a.nav-btn {
+            text-decoration: none;
         }
 
         a.nav-btn {
@@ -196,10 +214,28 @@
         }
 
         .nav-btn.dashboard:hover {
+        a.nav-btn {
+            text-decoration: none;
+        }
             background: #1a1a2e;
+        a.nav-btn {
+            text-decoration: none;
+        }
             border-color: #00d4aa;
+        a.nav-btn {
+            text-decoration: none;
+        }
             transform: translateY(-2px);
+        a.nav-btn {
+            text-decoration: none;
+        }
             box-shadow: 0 0 15px rgba(0, 212, 170, 0.6);
+        a.nav-btn {
+            text-decoration: none;
+        }
+        }
+        a.nav-btn {
+            text-decoration: none;
         }
 
         a.nav-btn {
@@ -985,19 +1021,134 @@
                 transform: translateY(0);
             }
         }
+    </style>
+</head>
 
-        /* ============================================================
-           AGENTE ASISTENTE FLOTANTE
-           ============================================================ */
-        #ai-assistant {
-            position: fixed;
-            bottom: 24px;
-            left: 24px;
-            width: 370px;
-            border-radius: 16px;
-            overflow: hidden;
-            box-shadow: 0 8px 40px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 212, 170, 0.18);
-            z-index: 2000;
+<body>
+    <!-- Navigation -->
+    <nav class="main-nav">
+        <a href="index.html" class="nav-btn dashboard">🏠 Dashboard</a>
+        <button class="nav-btn active">📚 Library</button>
+        <a href="learning.html" class="nav-btn">🎓 Learning</a>
+    </nav>
+
+    <!-- Library View -->
+    <div id="library-view" class="view-container library-view active">
+        <div class="library-header">
+            <h1 class="library-title">CGAlpha/dashboard/library</h1>
+            <button class="help-btn" onclick="showHelp()">? HELP</button>
+        </div>
+        <div class="library-grid" id="library-grid">
+            <!-- Library cards will be populated here -->
+        </div>
+    </div>
+
+    <!-- Learning View -->
+    <div id="learning-view" class="view-container">
+        <div class="container">
+            <!-- HEADER -->
+            <header>
+                <h1>CGAlpha/dashboard/learning</h1>
+                <button class="help-btn" onclick="showHelp()">? HELP</button>
+            </header>
+
+            <!-- HITO ACTUAL -->
+            <div class="hito-card">
+                <div class="hito-title">
+                    HITO ACTUAL: <span id="hito-nombre">Enum</span> (Día <span id="hito-dia">1</span>)
+                </div>
+                <span class="hito-status pendiente" id="hito-status">Pendiente</span>
+            </div>
+
+            <!-- PROBLEMAS -->
+            <div class="problemas-card">
+                <div class="problemas-title">4 PROBLEMAS DEL HITO:</div>
+
+                <div class="problema python">
+                    <div class="problema-header">
+                        <span class="problema-icon">snake</span>
+                        <span class="problema-agent">PYTHON_TUTOR:</span>
+                    </div>
+                    <div class="problema-text">"¿Qué es Enum y cómo se declara en Python?"</div>
+                </div>
+
+                <div class="problema math">
+                    <div class="problema-header">
+                        <span class="problema-icon">triangle</span>
+                        <span class="problema-agent">MATH_TUTOR:</span>
+                    </div>
+                    <div class="problema-text">"¿Cómo se relaciona Enum con conjuntos en matemáticas?"</div>
+                </div>
+
+                <div class="problema trading">
+                    <div class="problema-header">
+                        <span class="problema-icon">chart</span>
+                        <span class="problema-agent">TRADING_EXPERT:</span>
+                    </div>
+                    <div class="problema-text">"¿Por qué usar Enum para LONG/SHORT en lugar de strings?"</div>
+                </div>
+
+                <div class="problema architect">
+                    <div class="problema-header">
+                        <span class="problema-icon">building</span>
+                        <span class="problema-agent">ARCHITECT:</span>
+                    </div>
+                    <div class="problema-text">"¿Dónde debe vivir SignalDirection en la arquitectura?"</div>
+                </div>
+            </div>
+
+            <!-- ACCIONES -->
+            <div class="acciones-card">
+                <div class="acciones-title">ACCIONES:</div>
+                <div class="acciones-grid">
+                    <button class="accion-btn primary" onclick="crearClase()">1. CREAR CLASE</button>
+                    <button class="accion-btn" onclick="incluirMD()">2. INCLUIR .MD</button>
+                    <button class="accion-btn" onclick="leerClase()">3. LEER CLASE</button>
+                    <button class="accion-btn" onclick="anadirExtra()">4. AÑADIR EXTRA</button>
+                    <button class="accion-btn" onclick="completarHito()">5. COMPLETAR</button>
+                    <button class="accion-btn" onclick="verHistorial()">6. HISTORIAL</button>
+                    <button class="accion-btn" onclick="gestionarArchivos()">7. ARCHIVOS</button>
+                </div>
+            </div>
+
+            <!-- PROGRESO -->
+            <div class="progreso-card">
+                <div class="progreso-title">PROGRESO POR AGENTE:</div>
+                <div class="progreso-grid">
+                    <div class="progreso-item">
+                        <div class="progreso-label">PYTHON</div>
+                        <div class="progreso-bar">
+                            <div class="progreso-fill python" style="width: 0%"></div>
+                        </div>
+                        <div class="progreso-pct">0%</div>
+                    </div>
+                    <div class="progreso-item">
+                        <div class="progreso-label">MATH</div>
+                        <div class="progreso-bar">
+                            <div class="progreso-fill math" style="width: 0%"></div>
+                        </div>
+                        <div class="progreso-pct">0%</div>
+                    </div>
+                    <div class="progreso-item">
+                        <div class="progreso-label">TRADING</div>
+                        <div class="progreso-bar">
+                            <div class="progreso-fill trading" style="width: 0%"></div>
+                        </div>
+                        <div class="progreso-pct">0%</div>
+                    </div>
+                    <div class="progreso-item">
+                        <div class="progreso-label">ARCHITECT</div>
+                        <div class="progreso-bar">
+                            <div class="progreso-fill architect" style="width: 0%"></div>
+                        </div>
+                        <div class="progreso-pct">0%</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL -->            z-index: 2000;
             transition: width 0.3s, box-shadow 0.3s;
             background: #0f1b2d;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -1754,65 +1905,6 @@
 
     <!-- NOTIFICACIÓN -->
     <div class="notification" id="notification"></div>
-
-    <!-- ===== AGENTE ASISTENTE FLOTANTE ===== -->
-    <div id="ai-assistant">
-        <!-- Cabecera (click para colapsar/expandir) -->
-        <div class="ai-header" onclick="aiToggleCollapse()" title="Haz clic para minimizar/expandir">
-            <div class="ai-avatar">🤖</div>
-            <div class="ai-header-text">
-                <div class="ai-header-title">Asistente CGAlpha</div>
-                <div class="ai-header-sub">Pregúntame cualquier cosa</div>
-            </div>
-            <button class="ai-fullscreen-btn" id="ai-fullscreen-btn" onclick="event.stopPropagation(); aiToggleFullscreen()"
-                title="Pantalla completa">⛶</button>
-            <button class="ai-toggle-btn" id="ai-collapse-btn" onclick="event.stopPropagation(); aiToggleCollapse()"
-                title="Minimizar">▼</button>
-        </div>
-        <!-- Cuerpo del chat -->
-        <div class="ai-body">
-            <!-- Barra de API key -->
-            <div class="ai-apikey-bar">
-                <div class="ai-key-wrapper">
-                    <input type="password" id="ai-apikey-input" placeholder="Gemini API Key (opcional)"
-                        autocomplete="off">
-                    <button class="ai-eye-btn" id="ai-eye-btn" onclick="aiToggleKeyVisibility()"
-                        title="Mostrar/ocultar API Key">👁</button>
-                </div>
-                <button onclick="aiSaveKey()">💾</button>
-            </div>
-            <!-- Chips de contexto -->
-            <div class="ai-context-bar" id="ai-context-bar">
-                <span class="ai-chip" id="ai-chip-hito">📌 Hito: –</span>
-                <span class="ai-chip" id="ai-chip-clases">📄 Clases: 0</span>
-                <span class="ai-chip" id="ai-chip-extras">⭐ Extras: 0</span>
-            </div>
-            <div class="ai-conversation-layout">
-                <aside class="ai-history-sidebar" id="ai-history-sidebar"></aside>
-                <div class="ai-chat-panel">
-                    <!-- Mensajes -->
-                    <div class="ai-messages" id="ai-messages"></div>
-                    <!-- Sugerencias rápidas -->
-                    <div class="ai-suggestions" id="ai-suggestions">
-                        <button class="ai-sugg-btn" onclick="aiQuick('¿Qué es el hito actual y cómo trabajarlo?')">🎯 Hito
-                            actual</button>
-                        <button class="ai-sugg-btn" onclick="aiQuick('Explícame cómo funciona esta app')">📖 ¿Cómo
-                            funciona?</button>
-                        <button class="ai-sugg-btn" onclick="aiQuick('Resúmeme el contenido de la última clase guardada')">📋
-                            Última clase</button>
-                        <button class="ai-sugg-btn" onclick="aiQuick('Dame un ejercicio de práctica para el hito actual')">💡
-                            Ejercicio</button>
-                    </div>
-                    <!-- Input -->
-                    <div class="ai-input-row">
-                        <textarea id="ai-input" rows="1" placeholder="Pregúntame sobre el hito, la clase, la app…"
-                            onkeydown="aiKeyDown(event)"></textarea>
-                        <button id="ai-send-btn" onclick="aiSend()" title="Enviar">➤</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
 
     <script src="https://unpkg.com/prettier@3.3.3/standalone.js"></script>
     <script src="https://unpkg.com/prettier@3.3.3/plugins/babel.js"></script>
