@@ -56,6 +56,11 @@ class HealthMonitor:
         }
         self.alerts: list[dict[str, Any]] = []
 
+    @property
+    def total_samples(self) -> int:
+        """Devuelve el conteo total de muestras registradas en todos los SLOs."""
+        return sum(len(slo.values) for slo in self.slos.values())
+
     def record_metric(self, slo_id: str, value: float) -> None:
         if slo_id in self.slos:
             self.slos[slo_id].values.append(value)
