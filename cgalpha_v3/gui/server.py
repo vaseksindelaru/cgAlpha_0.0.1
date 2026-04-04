@@ -13,6 +13,7 @@ import json
 import os
 import random
 import re
+import time
 import uuid
 from datetime import datetime, timezone
 from functools import wraps
@@ -34,7 +35,7 @@ AUTH_TOKEN = os.getenv("CGV3_AUTH_TOKEN", "cgalpha-v3-local-dev")
 HOST = os.getenv("CGV3_HOST", "127.0.0.1")
 PORT = int(os.getenv("CGV3_PORT", "8080"))
 
-app = Flask(__name__, static_folder=str(STATIC_DIR))
+app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path='')
 
 # ---------------------------------------------------------------------------
 # Estado global y Managers
@@ -45,13 +46,19 @@ from cgalpha_v3.application.experiment_runner import ExperimentResult, Experimen
 from cgalpha_v3.data_quality.gates import TemporalLeakageError
 from cgalpha_v3.domain.models.signal import ApproachType, MemoryEntry, MemoryLevel, Proposal, RiskAssessment
 from cgalpha_v3.learning.memory_policy import MemoryPolicyEngine
+from cgalpha_v3.application.promotion_validator import PromotionValidator
+from cgalpha_v3.application.production_gate import ProductionGate, ProductionGateError
 from cgalpha_v3.lila.library_manager import AdaptiveBacklogItem, LibraryManager, LibrarySource
+from cgalpha_v3.risk.health_monitor import HealthMonitor
 
 _rollback_mgr = RollbackManager(MEMORY_DIR / "snapshots")
 _lila_mgr = LibraryManager()
 _change_proposer = ChangeProposer()
 _experiment_runner = ExperimentRunner()
 _memory_engine = MemoryPolicyEngine()
+_health_monitor = HealthMonitor()
+_promotion_validator = PromotionValidator()
+_production_gate = ProductionGate(_promotion_validator)
 _latest_proposal: Proposal | None = None
 _latest_experiment: ExperimentResult | None = None
 _experiment_history: list[ExperimentResult] = []
@@ -697,8 +704,9 @@ def api_status() -> ResponseReturnValue:
         "max_position_size_pct": _system_state["max_position_size_pct"],
         "max_signals_per_hour": _system_state["max_signals_per_hour"],
         "min_signal_quality_score": _system_state["min_signal_quality_score"],
+        "health": _health_monitor.status_snapshot(),
+        "regime_shift_active": _system_state.get("regime_shift_active", False),
         "primary_source_gap": _system_state["primary_source_gap"],
-        "regime_shift_active": _system_state["regime_shift_active"],
         "market": {
             "symbol": _system_state["market_symbol"],
             "interval": _system_state["market_interval"],
@@ -719,7 +727,10 @@ def api_status() -> ResponseReturnValue:
 @require_auth
 def api_events() -> ResponseReturnValue:
     """Stream de eventos recientes (últimos N)."""
-    limit = min(int(request.args.get("limit", 50)), 200)
+    try:
+        limit = min(max(int(request.args.get("limit", 50)), 1), 200)
+    except (ValueError, TypeError):
+        limit = 50
     return jsonify(list(reversed(_events_log[-limit:])))
 
 
@@ -1017,13 +1028,16 @@ def experiment_run() -> ResponseReturnValue:
     ft = data.get("feature_timestamps")
     feature_timestamps = [float(x) for x in ft] if isinstance(ft, list) else None
 
+    t0 = time.time()
     try:
         result = _experiment_runner.run_experiment(
             proposal=_latest_proposal,
             rows=dataset,
             feature_timestamps=feature_timestamps,
         )
+        _health_monitor.record_metric("leakage_rate", 0.0)
     except TemporalLeakageError as exc:
+        _health_monitor.record_metric("leakage_rate", 1.0)
         _system_state["experiment_loop_status"] = "failed_leakage"
         _record_control_cycle(
             event=f"EXPERIMENT: temporal leakage detectado ({exc})",
@@ -1031,6 +1045,7 @@ def experiment_run() -> ResponseReturnValue:
             level="critical",
             context={"error": str(exc)},
         )
+        _health_monitor.record_metric("exp_latency", time.time() - t0)
         return jsonify({"error": "temporal_leakage", "message": str(exc)}), 400
     except Exception as exc:
         _system_state["experiment_loop_status"] = "failed"
@@ -1040,8 +1055,12 @@ def experiment_run() -> ResponseReturnValue:
             level="warning",
             context={"error": str(exc)},
         )
+        _health_monitor.record_metric("exp_latency", time.time() - t0)
         return jsonify({"error": "experiment_failed", "message": str(exc)}), 400
+    finally:
+        pass
 
+    _health_monitor.record_metric("exp_latency", time.time() - t0)
     _latest_experiment = result
     _experiment_history.append(result)
     if len(_experiment_history) > 25:
@@ -1060,6 +1079,46 @@ def experiment_run() -> ResponseReturnValue:
         },
     )
     return jsonify(_serialize_experiment_result(result))
+
+
+@app.route("/api/promotion/validate", methods=["POST"])
+@require_auth
+def promotion_validate() -> ResponseReturnValue:
+    """Valida formalmente un experimento para promoción a Producción (Gate P3.3)."""
+    data = request.get_json() or {}
+    experiment_id = data.get("experiment_id")
+    
+    # Buscar experimento en el historial reciente
+    target = None
+    if _latest_experiment and _latest_experiment.experiment_id == experiment_id:
+        target = _latest_experiment
+    else:
+        for exp in reversed(_experiment_history):
+            if exp.experiment_id == experiment_id:
+                target = exp
+                break
+    
+    if not target:
+        return jsonify({"error": "experiment_not_found"}), 404
+        
+    report = _promotion_validator.validate_experiment(
+        result=target,
+        health=_health_monitor.status_snapshot()
+    )
+    
+    _record_control_cycle(
+        event=f"PROMOTION: Validación de {experiment_id} -> {report.status}",
+        trigger="promotion_validate",
+        level="info" if report.status == "approved" else "warning",
+        context={"experiment_id": experiment_id, "status": report.status, "checks": report.checks}
+    )
+    
+    return jsonify({
+        "status": report.status,
+        "overall_score": report.overall_score,
+        "checks": report.checks,
+        "reasons": report.reasons
+    })
 
 
 @app.route("/api/learning/memory/status", methods=["GET"])
@@ -1137,12 +1196,34 @@ def learning_memory_promote() -> ResponseReturnValue:
     entry_id = str(data.get("entry_id") or "").strip()
     target_level_raw = str(data.get("target_level") or "").strip()
     approved_by = str(data.get("approved_by") or "Lila")
+    experiment_id = data.get("experiment_id")
+    
     if not entry_id:
         return jsonify({"error": "entry_id_required"}), 400
     if not target_level_raw:
         return jsonify({"error": "target_level_required"}), 400
     try:
         target_level = MemoryPolicyEngine.parse_level(target_level_raw)
+        
+        # --- Production Gate P3.6 Enforcement ---
+        if target_level == MemoryLevel.STRATEGY:
+            exp = None
+            if experiment_id:
+                for res in reversed(_experiment_history):
+                    if res.experiment_id == experiment_id:
+                        exp = res
+                        break
+            
+            try:
+                _production_gate.verify_promotion_eligibility(
+                    target_level=target_level,
+                    experiment_result=exp,
+                    health_snapshot=_health_monitor.status_snapshot()
+                )
+            except ProductionGateError as pge:
+                return jsonify({"error": "production_gate_rejected", "message": str(pge)}), 403
+        # --------------------------------------
+
         entry = _memory_engine.promote(
             entry_id=entry_id,
             target_level=target_level,
@@ -1392,6 +1473,7 @@ def rollback_restore() -> ResponseReturnValue:
             trigger="rollback_restore",
             context={"restored_path": path, "elapsed_ms": restored["elapsed_ms"]}
         )
+        _health_monitor.record_metric("rollback_sla", restored["elapsed_ms"] / 1000.0)
         return jsonify({"status": "success", "restored": restored})
     except Exception as e:
         return jsonify({"error": str(e)}), 500

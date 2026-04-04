@@ -42,9 +42,8 @@ function doLogin() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-    // Autologin directo con token local
-    authToken = "cgalpha-v3-local-dev";
-    startPolling();
+    // El overlay de login debe aparecer al cargar si no hay token
+    // Se deja vacío para que doLogin haga su trabajo si el usuario interactúa
     renderFooterTs();
 });
 

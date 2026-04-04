@@ -114,6 +114,7 @@ class Proposal:
     hypothesis:             str
     approach_types_targeted: list[ApproachType]
     risk_assessment:        RiskAssessment
+    symbols:                list[str] = dc_field(default_factory=lambda: ["BTCUSDT"])
     namespace:              str = "v3"
     scientific_justification: dict[str, Any] = dc_field(default_factory=dict)
     changes:                list[dict[str, Any]] = dc_field(default_factory=list)

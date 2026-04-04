@@ -39,21 +39,15 @@ Objetivo: mantener trazabilidad legible en `learning/` de cada avance técnico.
 26. Cierre `P2.4`: detección de cambio de régimen (>2σ sostenido 20 sesiones) con degradación automática de niveles altos.
 27. Cierre `P2.9/P2.10`: wiring real de incident response (P0-P3 + post-mortem) y ADR por iteración con endpoints de consulta/resolución.
 28. Aplicación de correcciones de auditoría: fix reloj en `regime_shift`, cobertura batch labeler y filtros de memoria.
+29. Implementación `P3.5`: Motor de SLOs y Health Checks (`health_monitor.py`) con wiring en API real (`/api/status`).
+30. Implementación `P3.1`: Suite de test P3 Hardening (`test_p3_bounded_contexts.py`) cubriendo error paths de API y lógica de bordes.
 
 ## Evidencia técnica clave
 
-- Tests totales v3: `89 passed` (`pytest -q cgalpha_v3/tests`).
+- Tests totales v3: `98 passed` (`pytest -q cgalpha_v3/tests`).
 - Test SLA rollback: `test_restore_sla_p0_under_60_seconds`.
-- Test artefactos de iteración: `test_gui_iteration_artifacts.py` (2 tests).
-- Test Library GUI/API: `test_gui_library_api.py` (5 tests).
-- Test Theory/Backlog GUI/API: `test_gui_theory_api.py` (4 tests).
-- Test Experiment Loop GUI/API: `test_gui_experiment_api.py` (3 tests).
-- Test Application Experiment Runner: `test_experiment_runner.py` (4 tests).
-- Test Learning Memory GUI/API: `test_gui_learning_memory_api.py` (3 tests).
-- Test Incident/ADR GUI/API: `test_gui_incident_adr_api.py` (3 tests).
-- Test Labelers `approach_type`: `test_approach_labeler.py` (6 tests).
-- Test Motor Memoria Inteligente: `test_memory_policy.py` (8 tests).
-- Coverage formal v3: `pytest --cov=cgalpha_v3 --cov-fail-under=80 -q cgalpha_v3/tests` → **91.43%**.
+- Test P3 context hardening: `test_p3_bounded_contexts.py` (5 tests).
+- Coverage formal v3: `pytest --cov=cgalpha_v3 --cov-fail-under=80 -q cgalpha_v3/tests` → **92.79%**.
 - Salidas coverage:
   - `cgalpha_v3/coverage.xml`
   - `cgalpha_v3/htmlcov/`

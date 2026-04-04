@@ -689,6 +689,7 @@
             .lib-toolbar {
                 grid-template-columns: 1fr 1fr;
             }
+
             .lib-ingest-grid {
                 grid-template-columns: 1fr;
             }
@@ -1075,17 +1076,18 @@
                                 id="th-total-docs">0</span></div>
                         <div class="stat-row"><span class="stat-label">Primary ratio</span><span class="stat-value"
                                 id="th-primary-ratio">0.000</span></div>
-                        <div class="stat-row"><span class="stat-label">Primary source gap</span><span
-                                class="stat-value" id="th-primary-gap">NO</span></div>
+                        <div class="stat-row"><span class="stat-label">Primary source gap</span><span class="stat-value"
+                                id="th-primary-gap">NO</span></div>
                         <div class="stat-row"><span class="stat-label">Backlog open</span><span class="stat-value"
                                 id="th-backlog-open">0</span></div>
-                        <div class="stat-row"><span class="stat-label">Backlog in-progress</span><span class="stat-value"
-                                id="th-backlog-inprogress">0</span></div>
+                        <div class="stat-row"><span class="stat-label">Backlog in-progress</span><span
+                                class="stat-value" id="th-backlog-inprogress">0</span></div>
                         <div class="stat-row"><span class="stat-label">Backlog resolved</span><span class="stat-value"
                                 id="th-backlog-resolved">0</span></div>
 
                         <div style="margin-top:8px; border-top:1px solid var(--border); padding-top:10px;">
-                            <div style="font-size:12px; color:var(--text-dim); margin-bottom:6px;">Fuentes recientes</div>
+                            <div style="font-size:12px; color:var(--text-dim); margin-bottom:6px;">Fuentes recientes
+                            </div>
                             <div id="th-recent-sources" class="lib-results">
                                 <span style="color:var(--text-muted);font-size:12px">Cargando…</span>
                             </div>
@@ -1100,7 +1102,8 @@
                     <div class="panel-body">
                         <div class="form-row">
                             <label>Claim técnico</label>
-                            <input id="th-claim" type="text" placeholder="Ej: Momentum intradía mantiene edge en régimen X" />
+                            <input id="th-claim" type="text"
+                                placeholder="Ej: Momentum intradía mantiene edge en régimen X" />
                         </div>
                         <div class="form-row">
                             <label>Source IDs (coma separados)</label>
@@ -1110,8 +1113,10 @@
                         <div id="th-claim-result" class="lib-detail" style="margin-top:8px;">Sin validación aún.</div>
 
                         <div style="margin-top:8px; border-top:1px solid var(--border); padding-top:10px;">
-                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                                <span style="font-size:12px; color:var(--text-dim);">Backlog adaptativo (prioridad)</span>
+                            <div
+                                style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                                <span style="font-size:12px; color:var(--text-dim);">Backlog adaptativo
+                                    (prioridad)</span>
                                 <button class="btn btn-ghost btn-sm" onclick="fetchAdaptiveBacklog()">↻</button>
                             </div>
                             <div id="th-backlog-list" class="lib-results">
@@ -1174,8 +1179,8 @@
                                 id="exp-gross">0.0000</span></div>
                         <div class="stat-row"><span class="stat-label">Friction cost (%)</span><span class="stat-value"
                                 id="exp-cost">0.0000</span></div>
-                        <div class="stat-row"><span class="stat-label">Net return (%)</span><span class="stat-value accent"
-                                id="exp-net">0.0000</span></div>
+                        <div class="stat-row"><span class="stat-label">Net return (%)</span><span
+                                class="stat-value accent" id="exp-net">0.0000</span></div>
                         <div class="stat-row"><span class="stat-label">Sharpe like</span><span class="stat-value"
                                 id="exp-sharpe">0.0000</span></div>
                         <div class="stat-row"><span class="stat-label">Max DD (%)</span><span class="stat-value"
@@ -1222,8 +1227,8 @@
                                 id="learn-field-architect">0</span></div>
                         <div class="stat-row"><span class="stat-label">memory_librarian</span><span class="stat-value"
                                 id="learn-field-memory-librarian">0</span></div>
-                        <div class="stat-row"><span class="stat-label">Regime shift activo</span><span class="stat-value"
-                                id="learn-regime-active">NO</span></div>
+                        <div class="stat-row"><span class="stat-label">Regime shift activo</span><span
+                                class="stat-value" id="learn-regime-active">NO</span></div>
                     </div>
                 </div>
                 <div class="panel">
@@ -1243,12 +1248,13 @@
                                 id="learn-level-3">0</span></div>
                         <div class="stat-row"><span class="stat-label">4 — Estrategia</span><span class="stat-value"
                                 id="learn-level-4">0</span></div>
-                        <div class="stat-row"><span class="stat-label">Expiran <24h</span><span class="stat-value"
-                                id="learn-expiring">0</span></div>
+                        <div class="stat-row"><span class="stat-label">Expiran <24h< /span><span class="stat-value"
+                                        id="learn-expiring">0</span></div>
                         <div class="stat-row"><span class="stat-label">Stale entries</span><span class="stat-value"
                                 id="learn-stale">0</span></div>
                         <div style="margin-top:10px; border-top:1px solid var(--border); padding-top:10px;">
-                            <div style="font-size:12px; color:var(--text-dim); margin-bottom:6px;">Acciones runtime</div>
+                            <div style="font-size:12px; color:var(--text-dim); margin-bottom:6px;">Acciones runtime
+                            </div>
                             <div class="lib-ingest-grid">
                                 <input id="learn-content" type="text" placeholder="Contenido de memoria" />
                                 <select id="learn-field">
@@ -1281,7 +1287,18 @@
 
     </div>
 
-    <script src="app.js"></script>
+    <!-- LOGIN OVERLAY -->
+    <div id="login-overlay" class="">
+        <div class="login-card">
+            <h2>CGAlpha v3 — Acceso</h2>
+            <p>Ingresa tu token de seguridad para la sala de control.</p>
+            <input type="password" id="auth-token" placeholder="Bearer Token" />
+            <button onclick="doLogin()" class="btn">Entrar</button>
+            <p id="login-error" class="hidden error-msg" style="margin-top:10px"></p>
+        </div>
+    </div>
+
+    <script src="/app.js"></script>
 </body>
 
 </html>

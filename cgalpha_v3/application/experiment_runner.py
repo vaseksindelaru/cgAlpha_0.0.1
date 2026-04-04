@@ -60,6 +60,7 @@ class ExperimentResult:
     window_metrics: list[dict[str, Any]]
     approach_type_histogram: dict[str, int]
     no_leakage_checked: bool
+    symbol: str = "BTCUSDT"
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -141,6 +142,8 @@ class ExperimentRunner:
         self,
         proposal: Proposal,
         rows: list[dict[str, Any]],
+        *,
+        symbol: str | None = None,
         feature_timestamps: list[float] | None = None,
     ) -> ExperimentResult:
         """
@@ -234,6 +237,7 @@ class ExperimentRunner:
             window_metrics=metrics_by_window,
             approach_type_histogram=aggregated_hist,
             no_leakage_checked=True,
+            symbol=symbol or (proposal.symbols[0] if proposal.symbols else "BTCUSDT"),
         )
 
     @staticmethod

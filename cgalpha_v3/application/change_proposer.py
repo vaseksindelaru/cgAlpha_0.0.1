@@ -48,6 +48,7 @@ class ChangeProposer:
         *,
         hypothesis: str,
         approach_types_targeted: list[ApproachType],
+        symbols: list[str] | None = None,
         source_ids: list[str] | None = None,
         risk_assessment: RiskAssessment | None = None,
         expected_impact: dict[str, Any] | None = None,
@@ -55,6 +56,8 @@ class ChangeProposer:
         """Construye Proposal de dominio lista para ejecutar en ExperimentRunner."""
         if not approach_types_targeted:
             approach_types_targeted = [ApproachType.TOUCH]
+        
+        symbols = symbols or ["BTCUSDT"]
 
         risk = risk_assessment or RiskAssessment(
             max_drawdown_impact_pct=1.0,
@@ -67,6 +70,7 @@ class ChangeProposer:
             hypothesis=hypothesis.strip() or "Hypothesis pending",
             approach_types_targeted=approach_types_targeted,
             risk_assessment=risk,
+            symbols=symbols,
             scientific_justification={
                 "source_ids": source_ids or [],
                 "evidence_policy": "no_operational_claim_with_only_tertiary",
