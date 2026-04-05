@@ -1567,10 +1567,8 @@ def assistant_chat() -> ResponseReturnValue:
         elif "hola" in low_msg:
             resp = "Hola, soy Lila. Estoy monitoreando la integridad de los datos en tiempo real. ¿Deseas analizar algún experimento o que 'aprenda de la historia' v3?"
         else:
-            if os.getenv("OPENAI_API_KEY") or os.getenv("ZHIPU_API_KEY"):
-                resp = _assistant.generate(f"Contexto: Trading System v3 Audit. Health: {status}. Pregunta: {message}")
-            else:
-                resp = "Analizando... Veo que la integridad temporal es correcta y el Risk Manager está activo. Si quieres que aprenda del pasado, dime 'Lila, aprende de la historia'."
+            # Usar el asistente consolidado (respeta el proveedor seleccionado en settings)
+            resp = _assistant.generate(f"Contexto: Trading System v3 Audit (Lila v3 Assistant). Sujeto: {message}")
 
         _record_control_cycle(
             event=f"LILA_CHAT: Interaction - Msg: {message[:30]}...",

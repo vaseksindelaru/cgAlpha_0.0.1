@@ -61,12 +61,19 @@ class LLMAssistant:
 
     def _select_best_provider(self) -> LLMProvider:
         """Selecciona el mejor proveedor basado en credenciales disponibles."""
+        # Permitir forzar local via env
+        if os.environ.get("FORCE_LOCAL_LLM", "false").lower() == "true":
+            ollama = OllamaProvider()
+            if ollama.validate_api_key():
+                return ollama
+
         if os.environ.get("OPENAI_API_KEY"):
             return OpenAIProvider()
         if os.environ.get("ZHIPU_API_KEY"):
             return ZhipuProvider()
         
         # Fallback a Ollama si el servicio está vivo
+        ollama = OllamaProvider()
         ollama = OllamaProvider()
         if ollama.validate_api_key():
             return ollama
@@ -81,8 +88,16 @@ class LLMAssistant:
             return False
             
         try:
-            self.provider = self._available_providers[name]()
-            logger.info(f"🔄 Proveedor cambiado a: {name.upper()}")
+            # Crear nueva instancia del proveedor
+            new_provider = self._available_providers[name]()
+            
+            # Verificar si es Ollama y si está vivo (opcional pero recomendado)
+            if name == "ollama" and not new_provider.validate_api_key():
+                logger.warning("Ollama seleccionado pero no responde en http://127.0.0.1:11434")
+                # Aún así permitimos el switch para que el usuario vea el error real al generar
+            
+            self.provider = new_provider
+            logger.info(f"✅ LILA_ASSISTANT: Proveedor cambiado MANUALMENTE a {name.upper()}")
             return True
         except Exception as e:
             logger.error(f"Error al cambiar a {name}: {e}")

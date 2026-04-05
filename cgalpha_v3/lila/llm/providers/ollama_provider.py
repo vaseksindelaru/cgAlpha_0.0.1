@@ -55,9 +55,10 @@ class OllamaProvider(LLMProvider):
             "prompt": full_prompt,
             "stream": False,
             "options": {
-                "temperature": temperature,
-                "num_predict": max_tokens,
-                "num_ctx": 2048
+                "temperature": 0.1,
+                "num_predict": 300,
+                "num_ctx": 1024,
+                "num_thread": 4
             }
         }
         
@@ -70,7 +71,7 @@ class OllamaProvider(LLMProvider):
                 method="POST"
             )
             
-            with request.urlopen(req, timeout=120) as resp:
+            with request.urlopen(req, timeout=300) as resp:
                 raw = resp.read().decode("utf-8")
                 parsed = json.loads(raw)
                 return str(parsed.get("response", "")).strip()

@@ -253,7 +253,7 @@ function resetKillSwitch() {
 async function fetchLilaLLMStatus() {
     try {
         const response = await fetch('/api/lila/llm/status', {
-            headers: { 'Authorization': `Bearer ${AUTH_TOKEN}` }
+            headers: { 'Authorization': `Bearer ${authToken}` }
         });
         const data = await response.json();
         if (data.error) throw new Error(data.error);
@@ -287,7 +287,7 @@ async function switchLilaProvider(provider) {
         const response = await fetch('/api/lila/llm/switch', {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${AUTH_TOKEN}`,
+                'Authorization': `Bearer ${authToken}`,
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({ provider })
@@ -1306,44 +1306,39 @@ openai >= 1.0.0  # si OPENAI_API_KEY configurado
     },
     {
         cat: 'lila',
-        title: 'Lila: Motor de Memoria y Validación',
+        title: 'Lila: Asistente v3 y Doble Capa LLM',
         icon: '🤖',
         content: `
-                <p>Lila es el componente de <strong>gobierno del conocimiento</strong> que gestiona la Library y el ciclo de vida de la memoria:</p>
+                <p>Lila v3 es el <strong>asistente inteligente consolidado</strong> de CGAlpha. Utiliza una arquitectura de doble capa para eficiencia y precisión:</p>
                 <ul style="margin-left:20px; margin-top:8px; font-size:13px; color:var(--text-dim);">
-                    <li><strong>Library Manager:</strong> Valida ingestion de fuentes, detecta duplicados, y gestiona contradicciones entre papers.</li>
-                    <li><strong>Validación de Claims:</strong> Verifica que hipótesis tengan soporte en fuentes primary (ev_level=1) antes de permitir experimentos.</li>
-                    <li><strong>Memory Policy:</strong> Gestiona TTL (time-to-live) de entradas de memoria y detecta regime shifts que requieren degradar conocimiento obsoleto.</li>
+                    <li><strong>Capa 3 (Sintetizador):</strong> <code>qwen2.5:3b</code>. Razonamiento profundo y validación técnica.</li>
+                    <li><strong>Capa 2 (Recuperador):</strong> <code>qwen2.5:1.5b</code>. Búsqueda semántica rápida en la base de conocimientos.</li>
+                    <li><strong>LLM Hybrid:</strong> Soporta conmutación en caliente entre OpenAI, Zhipu y Ollama (Local).</li>
                 </ul>
-                <p style="margin-top:10px; font-size:12px; color:var(--text-dim);">En FASE 0, Lila opera como orquestador de validaciones, no como asistente conversacional automatizado. Las interacciones son vía API y formularios de la GUI.</p>
+                <p style="margin-top:10px; font-size:12px; color:var(--text-dim);">En FASE 0, Lila ya es conversacional y puede configurarse para usar inteligencia 100% local o en la nube desde el panel de ajustes.</p>
                 `
     },
     {
         cat: 'lila',
-        title: 'Comandos de Lila',
+        title: 'Comandos e Interacción',
         icon: '⌨️',
         content: `
-                <p>Lila acepta los siguientes comandos en el chat:</p>
+                <p>Lila acepta comandos especializados tanto en la GUI como vía CLI:</p>
                 <div style="margin-top:10px; display:flex; flex-direction:column; gap:6px; font-size:12px;">
                     <div style="background:var(--bg3); padding:8px; border-radius:6px;">
-                        <code style="color:var(--accent);">/status</code> - Reporte completo de SLOs y estado del sistema
+                        <code style="color:var(--accent);">cgalpha ask "..."</code> - Consulta técnica (Mentor/Architect) desde terminal.
                     </div>
                     <div style="background:var(--bg3); padding:8px; border-radius:6px;">
-                        <code style="color:var(--accent);">/risk</code> - Resumen de exposición y métricas de riesgo
+                        <code style="color:var(--accent);">/status</code> - Resumen de salud del asistente y proveedor activo.
                     </div>
                     <div style="background:var(--bg3); padding:8px; border-radius:6px;">
-                        <code style="color:var(--accent);">/experiments</code> - Lista de experimentos activos y sus métricas
+                        <code style="color:var(--accent);">/memory</code> - Visualización de la jerarquía de memoria (0a-4).
                     </div>
                     <div style="background:var(--bg3); padding:8px; border-radius:6px;">
-                        <code style="color:var(--accent);">/memory</code> - Historial de decisiones y aprendizajes
-                    </div>
-                    <div style="background:var(--bg3); padding:8px; border-radius:6px;">
-                        <code style="color:var(--accent);">/regime</code> - Análisis del régimen de mercado actual
-                    </div>
-                    <div style="background:var(--bg3); padding:8px; border-radius:6px;">
-                        <code style="color:var(--accent);">/help</code> - Muestra esta guía de comandos
+                        <code style="color:var(--accent);">/help</code> - Muestra esta guía completa de Lila.
                     </div>
                 </div>
+                <p style="margin-top:10px; font-size:11px; color:var(--text-dim);">Usa el selector LLM en ajustes (⚙️) para alternar entre inteligencia local (Qwen) y APIs externas.</p>
                 `
     },
     {

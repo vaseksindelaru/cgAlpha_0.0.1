@@ -39,7 +39,11 @@ class ZhipuProvider(OpenAIProvider):
                 raise LilaLLMError("openai package no instalado: pip install openai")
         return self._client
     
-    def get_model_info(self) -> Dict[str, Any]:
+    def generate(self, *args, **kwargs) -> str:
+        try:
+            return super().generate(*args, **kwargs)
+        except Exception as e:
+            raise LilaLLMError(f"Error de Zhipu AI (GLM): {e}")
         return {
             "name": self._model,
             "provider": "zhipu",
