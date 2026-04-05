@@ -23,7 +23,9 @@
             --bg3: #0f1b2d;
             --border: #333;
             --accent: #00d4aa;
+            --accent-dim: rgba(0, 212, 170, 0.55);
             --accent2: #00aef0;
+            --purple: #a855f7;
             --text: #eee;
             --text-dim: #aaa;
             --text-muted: #777;
@@ -931,16 +933,44 @@
                 cursor: pointer;
                 display: flex;
                 justify-content: space-between;
+                align-items: center;
+            }
+
+            .help-faq-q .faq-arrow {
+                transition: transform 0.3s ease;
+                font-size: 12px;
+            }
+
+            .help-faq-item.open .help-faq-q .faq-arrow {
+                transform: rotate(180deg);
             }
 
             .help-faq-a {
                 color: var(--text-dim);
                 font-size: 14px;
-                display: none;
+                max-height: 0;
+                overflow: hidden;
+                transition: max-height 0.3s ease, opacity 0.3s ease;
+                opacity: 0;
             }
 
             .help-faq-item.open .help-faq-a {
-                display: block;
+                max-height: 500px;
+                opacity: 1;
+            }
+
+            .help-empty {
+                color: var(--text-muted);
+                text-align: center;
+                padding: 40px 20px;
+            }
+
+            /* Search highlight */
+            .help-card mark {
+                background: rgba(0, 212, 170, 0.3);
+                color: var(--accent);
+                padding: 1px 4px;
+                border-radius: 3px;
             }
         </style>
 
@@ -1477,6 +1507,12 @@
                         <path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
                     </svg>
                 </button>
+                <button title="LLM Settings" onclick="toggleLilaSettings()">
+                    <svg viewBox="0 0 24 24" width="14" height="14">
+                        <path fill="currentColor"
+                            d="M12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5zm7.39-4c.07-.49.11-.98.11-1.5s-.04-1.01-.11-1.5l2.06-1.61c.19-.15.24-.41.12-.62l-1.95-3.37c-.12-.22-.38-.29-.61-.2l-2.42.98c-.51-.39-1.06-.71-1.66-.96l-.37-2.58c-.04-.24-.24-.42-.48-.42h-3.9c-.24 0-.44.18-.48.42l-.37 2.58c-.6.25-1.15.57-1.66.96l-2.42-.98c-.23-.09-.49-.02-.61.2L3.04 7.27c-.12.21-.07.47.12.62l2.06 1.61c-.07.49-.11.98-.11 1.5s.04 1.01.11 1.5l-2.06 1.61c-.19.15-.24.41-.12.62l1.95 3.37c.12.22.38.29.61.2l2.42-.98c.51.39 1.06.71 1.66.96l.37 2.58c.04.24.24.42.48.42h3.9c.24 0 .44-.18.48-.42l.37-2.58c.6-.25 1.15-.57 1.66-.96l2.42.98c.23.09.49.02.61-.2l1.95-3.37c.12-.21.07-.47-.12-.62l-2.06-1.61z" />
+                    </svg>
+                </button>
                 <button title="History" onclick="toggleLilaHistory()">
                     <svg viewBox="0 0 24 24" width="14" height="14">
                         <path fill="currentColor"
@@ -1495,6 +1531,42 @@
             <div id="lila-history-overlay" class="hidden">
                 <div class="history-header">Chat History</div>
                 <div id="lila-history-list"></div>
+            </div>
+            <div id="lila-settings-overlay" class="hidden">
+                <div class="history-header">Lila LLM Settings</div>
+                <div id="lila-llm-status-info"
+                    style="padding:15px; font-size:12px; color:var(--text); line-height:1.6;">
+                    <p><strong>Provider:</strong> <span id="lila-provider-name">Loading...</span></p>
+                    <div class="control-group" style="margin: 10px 0;">
+                        <label for="lila-provider-select">Switch Provider:</label>
+                        <select id="lila-provider-select" onchange="switchLilaProvider(this.value)"
+                            style="background:var(--bg2); color:var(--text); border:1px solid var(--accent); padding:4px; border-radius:4px; width:100%; margin-top:5px;">
+                            <option value="openai">OpenAI</option>
+                            <option value="zhipu">Zhipu AI</option>
+                            <option value="ollama">Local Qwen (Ollama)</option>
+                        </select>
+                    </div>
+                    <p><strong>Status:</strong> <span id="lila-circuit-status">OK</span></p>
+                    <div id="lila-memory-summary"
+                        style="margin-top: 15px; border-top: 1px solid #444; padding-top: 10px;">
+                        <h4 style="margin-bottom:8px; color:var(--accent);">Memory Integrity (0a-4)</h4>
+                        <div id="memory-levels-grid"
+                            style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 0.85em; text-align: center;">
+                            <div style="background:rgba(255,255,255,0.05); padding:5px; border-radius:4px;">0a
+                                <br><strong id="mem-0a" style="color:var(--accent)">0</strong></div>
+                            <div style="background:rgba(255,255,255,0.05); padding:5px; border-radius:4px;">0b
+                                <br><strong id="mem-0b" style="color:var(--accent)">0</strong></div>
+                            <div style="background:rgba(255,255,255,0.05); padding:5px; border-radius:4px;">1
+                                <br><strong id="mem-1" style="color:var(--accent)">0</strong></div>
+                            <div style="background:rgba(255,255,255,0.05); padding:5px; border-radius:4px;">2
+                                <br><strong id="mem-2" style="color:var(--accent)">0</strong></div>
+                            <div style="background:rgba(255,255,255,0.05); padding:5px; border-radius:4px;">3
+                                <br><strong id="mem-3" style="color:var(--accent)">0</strong></div>
+                            <div style="background:rgba(255,255,255,0.05); padding:5px; border-radius:4px;">4
+                                <br><strong id="mem-4" style="color:var(--accent)">0</strong></div>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div id="lila-messages">
                 <div class="msg lila-msg">

@@ -9,9 +9,8 @@ Ejecutar con: pytest tests/test_llm_providers.py -v
 
 import pytest
 from unittest.mock import Mock, patch, MagicMock
-from core.llm_providers.base import LLMProvider, LLMError, LLMConnectionError
-from core.llm_providers.openai_provider import OpenAIProvider
-from core.llm_providers.rate_limiter import RateLimiter, retry_with_rate_limit
+from cgalpha_v3.lila.llm.providers import LLMProvider, OpenAIProvider, RateLimiter, retry_with_rate_limit
+from cgalpha_v3.lila.llm.exceptions import LilaLLMError as LLMError, LilaLLMConnectionError as LLMConnectionError
 
 
 class TestLLMProviderInterface:

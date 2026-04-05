@@ -250,6 +250,68 @@ function resetKillSwitch() {
         .catch(err => alert("Error: " + err.message));
 }
 // ── ROLLBACK ───────────────────────────────────────────
+async function fetchLilaLLMStatus() {
+    try {
+        const response = await fetch('/api/lila/llm/status', {
+            headers: { 'Authorization': `Bearer ${AUTH_TOKEN}` }
+        });
+        const data = await response.json();
+        if (data.error) throw new Error(data.error);
+
+        // Mapear datos a los nuevos IDs de index.html
+        document.getElementById('lila-provider-name').innerText = data.provider_name || 'Unknown';
+        document.getElementById('lila-circuit-status').innerText = data.circuit_breaker.status || 'OK';
+
+        // Actualizar selector
+        const select = document.getElementById('lila-provider-select');
+        if (select && data.provider_name) {
+            const val = data.provider_name.toLowerCase();
+            select.value = val.includes('ollama') ? 'ollama' :
+                val.includes('zhipu') ? 'zhipu' : 'openai';
+        }
+
+        // Actualizar cuadrícula de memoria si está presente
+        if (data.memory_levels) {
+            Object.entries(data.memory_levels).forEach(([k, v]) => {
+                const el = document.getElementById(`mem-${k}`);
+                if (el) el.innerText = v;
+            });
+        }
+    } catch (err) {
+        console.error('Error fetching Lila status:', err);
+    }
+}
+
+async function switchLilaProvider(provider) {
+    try {
+        const response = await fetch('/api/lila/llm/switch', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${AUTH_TOKEN}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ provider })
+        });
+        const data = await response.json();
+        if (data.error) {
+            alert(`Error switching provider: ${data.error}`);
+        } else {
+            console.log(`Provider switched to ${provider}`);
+            fetchLilaLLMStatus(); // Refrescar UI
+        }
+    } catch (err) {
+        console.error('Error switching provider:', err);
+    }
+}
+
+function updateLilaMemoryStats(levels) {
+    // levels es un objeto { "0a": count, "0b": count, ... }
+    const keys = ["0a", "0b", "1", "2", "3", "4"];
+    keys.forEach(k => {
+        const el = document.getElementById(`mem-${k}`);
+        if (el) el.innerText = levels[k] || 0;
+    });
+}
 async function fetchRollbacks() {
     try {
         const snaps = await apiFetch("/api/rollback/list");
@@ -928,12 +990,23 @@ function startNewLilaChat() {
 }
 
 function toggleLilaHistory() {
+    document.getElementById("lila-settings-overlay").classList.add("hidden");
     const overlay = document.getElementById("lila-history-overlay");
     overlay.classList.toggle("hidden");
     if (!overlay.classList.contains("hidden")) {
         renderLilaHistory();
     }
 }
+
+function toggleLilaSettings() {
+    document.getElementById("lila-history-overlay").classList.add("hidden");
+    const overlay = document.getElementById("lila-settings-overlay");
+    overlay.classList.toggle("hidden");
+    if (!overlay.classList.contains("hidden")) {
+        fetchLilaLLMStatus();
+    }
+}
+
 
 function renderLilaHistory() {
     const list = document.getElementById("lila-history-list");
@@ -942,7 +1015,7 @@ function renderLilaHistory() {
     lilaHistory.forEach(item => {
         const div = document.createElement("div");
         div.className = "history-item";
-        div.innerHTML = `<strong>${item.date}</strong><br>${item.summary}`;
+        div.innerHTML = `< strong > ${item.date}</strong > <br>${item.summary}`;
         div.onclick = () => {
             document.getElementById("lila-messages").innerHTML = item.html;
             toggleLilaHistory();
@@ -990,125 +1063,789 @@ function appendChatMessage(type, text) {
 const HELP_DATA = [
     {
         cat: 'inicio',
-        title: 'Guía de Inicio Rápido (Quick Start v3.1)',
+        title: '🚀 Quick Start — Arranque del Sistema',
         icon: '🚀',
         content: `
-            <p>Bienvenido a la Sala de Control de <strong>CGAlpha v3</strong>. Este entorno es una interfaz viva para el sistema de trading algorítmico distribuido.</p>
-            <ul style="margin-left:20px; margin-top:10px; display:flex; flex-direction:column; gap:10px; font-size:13px;">
-                <li><strong>1. Estado del Nodo:</strong> Verifique el indicador de pulso (arriba a la derecha). Un pulso verde indica que el <em>HealthMonitor</em> está recibiendo telemetría en tiempo real (&lt;100ms).</li>
-                <li><strong>2. Capas de Protección:</strong> El sistema opera bajo tres capas: 
-                    <span style="color:var(--accent2)">Operation</span> (Ejecución), 
-                    <span style="color:var(--accent)">Audit</span> (Lila AI) y 
-                    <span style="color:var(--red)">Risk</span> (Circuit Breakers).
-                </li>
-                <li><strong>3. Interacción con Lila:</strong> Lila no es solo un chat; es la supervisora del sistema. Use el comando <code>/status</code> para obtener un reporte técnico de los SLOs actuales.</li>
-                <li><strong>4. Flujo de Experimentos:</strong> Las estrategias no se lanzan "a ciegas". Cada cambio pasa por el <em>Experiment Loop</em>, donde se valida que no haya <em>Temporal Leakage</em> antes de ir a Live.</li>
-            </ul>
-            <div style="margin-top:15px; padding:12px; background:rgba(0,212,170,0.05); border:1px solid rgba(0,212,170,0.2); border-radius:10px; font-size:12px;">
-                <strong>SOPORTE MULTI-SYMBOL:</strong> Esta versión soporta BTC, ETH y SOL con parámetros de riesgo independientes por par.
-            </div>
-        `
+    <h4 style="color:var(--accent); margin-bottom:10px;">Requisitos</h4>
+    <div style="background:var(--bg3); padding:12px; border-radius:8px; font-family:monospace; font-size:12px; margin-bottom:12px;">
+        # Dependencias mínimas
+Python >= 3.11
+flask >= 2.3.0
+
+        # Opcional para LLM Assistant
+openai >= 1.0.0  # si OPENAI_API_KEY configurado
+    </div>
+
+    <h4 style="color:var(--accent); margin-bottom:10px;">Arranque del servidor</h4>
+    <div style="background:var(--bg3); padding:12px; border-radius:8px; font-family:monospace; font-size:12px; margin-bottom:12px;">
+        # Variables de entorno (opcional)
+        export CGV3_AUTH_TOKEN="tu-token-seguro-aqui"
+        export CGV3_HOST="127.0.0.1"
+        export CGV3_PORT="8080"
+
+        # Iniciar servidor
+        python cgalpha_v3/gui/server.py
+    </div>
+
+    <div style="background:rgba(0,212,170,0.08); padding:10px; border-radius:8px; border-left:3px solid var(--accent); font-size:12px;">
+        <strong>Output esperado:</strong><br>
+            <code style="color:var(--accent);">[CGAlpha v3 GUI] Iniciando en http://127.0.0.1:8080</code><br>
+                <code style="color:var(--accent);">[CGAlpha v3 GUI] Auth token activo: tu-token...</code><br>
+                    <code style="color:var(--accent);">[CGAlpha v3 GUI] FASE 0 — Control Room en modo mock</code>
+                </div>
+                `
+    },
+    {
+        cat: 'inicio',
+        title: '🔍 Verificación con curl / httpie',
+        icon: '🔍',
+        content: `
+                <h4 style="color:var(--accent); margin-bottom:10px;">Test de conectividad</h4>
+
+                <div style="margin-bottom:16px;">
+                    <strong style="font-size:11px; color:var(--text-dim);">Con curl:</strong>
+                    <div style="background:var(--bg3); padding:12px; border-radius:8px; font-family:monospace; font-size:11px; margin-top:6px;">
+                        curl -H "Authorization: Bearer cgalpha-v3-local-dev" \\<br>
+                            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;http://127.0.0.1:8080/api/status | jq .
+                    </div>
+                </div>
+
+                <div style="margin-bottom:16px;">
+                    <strong style="font-size:11px; color:var(--text-dim);">Con httpie:</strong>
+                    <div style="background:var(--bg3); padding:12px; border-radius:8px; font-family:monospace; font-size:11px; margin-top:6px;">
+                        http :8080/api/status "Authorization: Bearer cgalpha-v3-local-dev"
+                    </div>
+                </div>
+
+                <h4 style="color:var(--accent); margin-bottom:10px;">Acceso via navegador</h4>
+                <div style="background:var(--bg3); padding:12px; border-radius:8px; font-size:12px;">
+                    <strong>URL:</strong> <code>http://localhost:8080</code><br>
+                        <strong>Token default:</strong> <code style="color:var(--accent);">cgalpha-v3-local-dev</code>
+                </div>
+
+                <div style="margin-top:12px; padding:10px; background:rgba(255,107,107,0.08); border-radius:8px; font-size:11px;">
+                    <strong style="color:var(--red);">⚠️ PRODUCCIÓN:</strong> Cambiar CGV3_AUTH_TOKEN por valor criptográficamente seguro (mínimo 32 caracteres).
+                </div>
+                `
+    },
+    {
+        cat: 'inicio',
+        title: '🏗️ Arquitectura del Sistema',
+        icon: '🏗️',
+        content: `
+                <pre style="background:var(--bg3); padding:12px; border-radius:8px; font-size:10px; overflow-x:auto; line-height:1.3;">
+                    ┌─────────────────────────────────────────┐
+                    │           BROWSER (Frontend)             │
+                    │  index.html │ style.css │ app.js         │
+                    └─────────────────────────────────────────┘
+                    │ HTTP/WS
+                    ▼
+                    ┌─────────────────────────────────────────┐
+                    │         SERVER.PY (Flask)                │
+                    │  ┌──────────┐ ┌────────┐ ┌──────────┐   │
+                    │  │Auth Layer│ │Routes  │ │Serialize │   │
+                    │  └──────────┘ └────────┘ └──────────┘   │
+                    └─────────────────────────────────────────┘
+                    │
+                    ▼
+                    ┌─────────────────────────────────────────┐
+                    │           DOMAIN LAYER                   │
+                    │  Signal │ Proposal │ MemoryEntry         │
+                    │  ApproachType │ MemoryLevel             │
+                    └─────────────────────────────────────────┘
+                    │
+                    ▼
+                    ┌─────────────────────────────────────────┐
+                    │         APPLICATION LAYER                │
+                    │  RollbackManager │ ExperimentRunner      │
+                    │  ChangeProposer │ PromotionValidator     │
+                    └─────────────────────────────────────────┘
+                    │
+                    ▼
+                    ┌─────────────────────────────────────────┐
+                    │           SUBSYSTEMS                     │
+                    │  Lila Library │ MemoryPolicyEngine       │
+                    │  ProjectHistoryLearner                   │
+                    └─────────────────────────────────────────┘
+                </pre>
+                `
+    },
+    {
+        cat: 'inicio',
+        title: '📊 Flujo de Datos Principal',
+        icon: '📊',
+        content: `
+                <pre style="background:var(--bg3); padding:12px; border-radius:8px; font-size:10px; overflow-x:auto; line-height:1.4;">
+                    Usuario ──► GUI ──► API Endpoint ──► Manager/Service
+                    │
+                    ▼
+                    _record_control_cycle()
+                    │
+                    ├──► _log_event() ──► _events_log[]
+                    ├──► _persist_iteration_artifacts()
+                    │    └──► memory/iterations/
+                    ├──► _capture_memory_librarian_event()
+                    ├──► _register_incident()
+                    │    └──► docs/post_mortems/
+                    └──► _register_adr()
+                    └──► docs/adr/
+                </pre>
+
+                <p style="margin-top:12px; font-size:12px; color:var(--text-dim);">
+                    Cada acción de control ejecutada via GUI dispara <code>_record_control_cycle()</code>
+                    para garantizar trazabilidad automática.
+                </p>
+                `
+    },
+    {
+        cat: 'inicio',
+        title: '🖥️ Paneles de la GUI (FASE 0)',
+        icon: '🖥️',
+        content: `
+                <p>La interfaz de CGAlpha v3 está organizada en secciones accesibles desde la barra superior:</p>
+                <div style="margin-top:10px; display:flex; flex-direction:column; gap:10px; font-size:12px;">
+                    <div style="background:var(--bg3); padding:10px; border-radius:8px; border-left:4px solid var(--accent);">
+                        <strong>📈 Dashboard</strong> — Vista consolidada: Mission Control (estado del sistema), Market Live (precio mock), Risk Dashboard (drawdown, circuit breaker), y Event Log (últimos 30 eventos).
+                    </div>
+                    <div style="background:var(--bg3); padding:10px; border-radius:8px; border-left:4px solid var(--red);">
+                        <strong>🛡️ Risk</strong> — Configuración de parámetros de riesgo (max drawdown, position size, signals/hora) y controles del Kill-Switch (armar/confirmar/reset).
+                    </div>
+                    <div style="background:var(--bg3); padding:10px; border-radius:8px; border-left:4px solid var(--accent2);">
+                        <strong>📚 Library</strong> — Gestión de fuentes científicas: buscar papers, ver metadatos, ingestar nuevas fuentes. Muestra ratios primary/secondary/tertiary.
+                    </div>
+                    <div style="background:var(--bg3); padding:10px; border-radius:8px; border-left:4px solid var(--purple);">
+                        <strong>🔬 Theory Live</strong> — Estado de la biblioteca y validación de claims. Muestra gaps de fuentes primarias y backlog adaptativo.
+                    </div>
+                    <div style="background:var(--bg3); padding:10px; border-radius:8px; border-left:4px solid var(--yellow);">
+                        <strong>🧪 Experiment Loop</strong> — Crear proposals, ejecutar backtests (walk-forward), ver métricas (sharpe, sortino, win rate) y estado de experimentos.
+                    </div>
+                    <div style="background:var(--bg3); padding:10px; border-radius:8px; border-left:4px solid var(--green);">
+                        <strong>🧠 Learning</strong> — Ingestar entradas de memoria, promover niveles (0a→4), ejecutar retención TTL, y verificar regime shifts.
+                    </div>
+                </div>
+                <p style="margin-top:12px; font-size:11px; color:var(--text-dim);">
+                    Navegación: clic en los botones de la barra superior para cambiar de sección. El Help (Help ?) muestra esta documentación.
+                </p>
+                `
     },
     {
         cat: 'riesgo',
-        title: 'Gestión de Riesgos (High-Frequency Safety)',
+        title: 'Gestión de Riesgos (Kill-Switch y Circuit Breakers)',
         icon: '🛡️',
         content: `
-            <p>El sistema de riesgo de v3.1 ha evolucionado de un modelo basado en ATR a un motor de <strong>Micro-estructura de Mercado</strong>.</p>
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;">
-                <div style="background:rgba(255,107,107,0.05); padding:8px; border-radius:8px; border:1px solid rgba(255,107,107,0.2);">
-                    <strong style="color:var(--red); font-size:11px;">CIRCUIT BREAKERS</strong>
-                    <p style="font-size:11px; margin-top:4px;">Se activan si el drawdown supera el 5% o si el OBI (Order Book Imbalance) muestra anomalías de liquidez extrema.</p>
+                <p>En esta fase de control, el sistema implementa protecciones mediante <strong>Kill-Switch</strong> (apagado controlado) y <strong>Circuit Breaker</strong> (pausa automática ante anomalías).</p>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;">
+                    <div style="background:rgba(255,107,107,0.05); padding:8px; border-radius:8px; border:1px solid rgba(255,107,107,0.2);">
+                        <strong style="color:var(--red); font-size:11px;">CIRCUIT BREAKERS</strong>
+                        <p style="font-size:11px; margin-top:4px;">Se activan si el drawdown de sesión supera el límite configurado (por defecto 5%) o si la calidad de datos es inválida. Bloquea generación de nuevas señales.</p>
+                    </div>
+                    <div style="background:rgba(0,212,170,0.05); padding:8px; border-radius:8px; border:1px solid rgba(0,212,170,0.2);">
+                        <strong style="color:var(--accent); font-size:11px;">KILL-SWITCH</strong>
+                        <p style="font-size:11px; margin-top:4px;">Protocolo de dos pasos (armar + confirmar) que detiene operación inmediatamente. Se reactiva manualmente desde la GUI o vía API sin reiniciar el servidor.</p>
+                    </div>
                 </div>
-                <div style="background:rgba(0,212,170,0.05); padding:8px; border-radius:8px; border:1px solid rgba(0,212,170,0.2);">
-                    <strong style="color:var(--accent); font-size:11px;">KILL-SWITCH</strong>
-                    <p style="font-size:11px; margin-top:4px;">Desconexión física redundante. Latencia de ejecución: 15ms. Garantiza que ninguna posición quede huérfana.</p>
+                <p style="margin-top:10px; font-size:12px;"><strong>SLO actual (mock):</strong> Se monitorea calidad de datos por polling REST (cada 5s). Si data_quality cae a "stale", el sistema marca el estado como degradado y registra incidente.</p>
+                `
+    },
+    {
+        cat: 'riesgo',
+        title: 'Parámetros de Riesgo (Globales)',
+        icon: '📉',
+        content: `
+                <p>En la fase actual, los parámetros de riesgo son <strong>globales</strong> (aplican a todas las operaciones). Se configuran desde el panel <em>Risk Management</em> o vía API <code>/api/risk/params</code>.</p>
+                <table style="width:100%; border-collapse:collapse; margin-top:10px; font-size:11px;">
+                    <thead>
+                        <tr style="border-bottom:1px solid var(--border); text-align:left;">
+                            <th style="padding:6px;">Parámetro</th>
+                            <th style="padding:6px;">Default</th>
+                            <th style="padding:6px;">Descripción</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                            <td style="padding:6px;">Max Drawdown Sesión</td>
+                            <td style="padding:6px; color:var(--accent);">5.0%</td>
+                            <td style="padding:6px;">Si supera este valor se activa Circuit Breaker</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                            <td style="padding:6px;">Max Position Size</td>
+                            <td style="padding:6px;">2.0%</td>
+                            <td style="padding:6px;">Límite de exposición por señal</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                            <td style="padding:6px;">Max Signals/Hora</td>
+                            <td style="padding:6px;">10</td>
+                            <td style="padding:6px;">Frecuencia máxima de señales</td>
+                        </tr>
+                        <tr>
+                            <td style="padding:6px;">Min Signal Quality</td>
+                            <td style="padding:6px;">0.65</td>
+                            <td style="padding:6px;">Score mínimo para aceptar señal (0–1)</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p style="margin-top:10px; font-size:11px; color:var(--text-dim);">Los cambios aplican inmediatamente vía API; no requieren reinicio.</p>
+                `
+    },
+    {
+        cat: 'riesgo',
+        title: 'Drawdown y Exposición (FASE 0)',
+        icon: '📊',
+        content: `
+                <p>En la fase actual se monitorean métricas básicas de riesgo (simuladas/mock):</p>
+                <ul style="margin-left:20px; margin-top:8px; font-size:12px; color:var(--text-dim);">
+                    <li><strong>Drawdown de sesión:</strong> Caída desde el pico de capital inicial de la sesión. Dispara Circuit Breaker si supera el límite configurado.</li>
+                    <li><strong>Exposición por señal:</strong> Controlada por <em>Max Position Size</em> (% del capital por operación).</li>
+                    <li><strong>Frecuencia:</strong> Limitada por <em>Max Signals/Hora</em> para evitar sobre-trading.</li>
+                    <li><strong>Calidad mínima:</strong> Señales deben superar <em>Min Signal Quality Score</em> (0–1).</li>
+                </ul>
+                <div style="margin-top:12px; padding:10px; background:rgba(255,107,107,0.08); border-radius:8px; font-size:11px;">
+                    <strong style="color:var(--red);">⚠️ Alcance FASE 0:</strong> Las métricas de riesgo avanzadas (Greeks, correlación de cartera, drawdown histórico real) se habilitarán en fases posteriores con conexión a datos de mercado reales.
                 </div>
-            </div>
-            <p style="margin-top:10px; font-size:12px;"><strong>SLO Tracker:</strong> Monitoreamos la latencia del WebSocket. Si el <em>Data Quality</em> cae a "stale", el sistema entra automáticamente en modo "Defensive" (solo salidas permitted).</p>
-        `
+                `
     },
     {
         cat: 'lila',
-        title: 'Lila: Inteligencia de Auditoría Continua',
+        title: 'Lila: Motor de Memoria y Validación',
         icon: '🤖',
         content: `
-            <p>Lila v3.1 utiliza un motor de <strong>Memoria de Retención Progresiva</strong> para evitar la degradación del conocimiento.</p>
-            <ul style="margin-left:20px; margin-top:8px; font-size:13px; color:var(--text-dim);">
-                <li><strong>Auditoría P3 (Hardening):</strong> Lila valida cada propuesta de experimento contra el historial de fallos previos (Learning Memory).</li>
-                <li><strong>Detección de Sesgo:</strong> Analiza si una estrategia está sobre-optimizada para un régimen de mercado específico.</li>
-                <li><strong>Auto-documentación:</strong> Lila traduce eventos técnicos (logs) a lenguaje natural en el panel de Mission Control.</li>
-            </ul>
-            <div style="margin-top:10px; font-family:monospace; background:#000; padding:8px; border-radius:6px; font-size:11px; color:#0f0;">
-                > Lila: "Detectado cambio de régimen (Volatilidad ↑22%). Sugiero reducir Max Position un 15%."
-            </div>
-        `
+                <p>Lila es el componente de <strong>gobierno del conocimiento</strong> que gestiona la Library y el ciclo de vida de la memoria:</p>
+                <ul style="margin-left:20px; margin-top:8px; font-size:13px; color:var(--text-dim);">
+                    <li><strong>Library Manager:</strong> Valida ingestion de fuentes, detecta duplicados, y gestiona contradicciones entre papers.</li>
+                    <li><strong>Validación de Claims:</strong> Verifica que hipótesis tengan soporte en fuentes primary (ev_level=1) antes de permitir experimentos.</li>
+                    <li><strong>Memory Policy:</strong> Gestiona TTL (time-to-live) de entradas de memoria y detecta regime shifts que requieren degradar conocimiento obsoleto.</li>
+                </ul>
+                <p style="margin-top:10px; font-size:12px; color:var(--text-dim);">En FASE 0, Lila opera como orquestador de validaciones, no como asistente conversacional automatizado. Las interacciones son vía API y formularios de la GUI.</p>
+                `
+    },
+    {
+        cat: 'lila',
+        title: 'Comandos de Lila',
+        icon: '⌨️',
+        content: `
+                <p>Lila acepta los siguientes comandos en el chat:</p>
+                <div style="margin-top:10px; display:flex; flex-direction:column; gap:6px; font-size:12px;">
+                    <div style="background:var(--bg3); padding:8px; border-radius:6px;">
+                        <code style="color:var(--accent);">/status</code> - Reporte completo de SLOs y estado del sistema
+                    </div>
+                    <div style="background:var(--bg3); padding:8px; border-radius:6px;">
+                        <code style="color:var(--accent);">/risk</code> - Resumen de exposición y métricas de riesgo
+                    </div>
+                    <div style="background:var(--bg3); padding:8px; border-radius:6px;">
+                        <code style="color:var(--accent);">/experiments</code> - Lista de experimentos activos y sus métricas
+                    </div>
+                    <div style="background:var(--bg3); padding:8px; border-radius:6px;">
+                        <code style="color:var(--accent);">/memory</code> - Historial de decisiones y aprendizajes
+                    </div>
+                    <div style="background:var(--bg3); padding:8px; border-radius:6px;">
+                        <code style="color:var(--accent);">/regime</code> - Análisis del régimen de mercado actual
+                    </div>
+                    <div style="background:var(--bg3); padding:8px; border-radius:6px;">
+                        <code style="color:var(--accent);">/help</code> - Muestra esta guía de comandos
+                    </div>
+                </div>
+                `
+    },
+    {
+        cat: 'lila',
+        title: 'Change Proposer (Propuestas de Mejora)',
+        icon: '🔄',
+        content: `
+                <p>El módulo <strong>Change Proposer</strong> analiza el estado del sistema y sugiere ajustes cuando detecta anomalías:</p>
+                <ol style="margin-left:20px; margin-top:8px; font-size:12px; color:var(--text-dim);">
+                    <li><strong>Anomaly Detection:</strong> Detecta desviaciones en métricas (drawdown alto, calidad de datos baja, etc.).</li>
+                    <li><strong>Historical Pattern Matching:</strong> Compara situación actual con incidentes previos registrados en memoria.</li>
+                    <li><strong>Sugerencias:</strong> Propone ajustes de parámetros de riesgo o revisión de hipótesis.</li>
+                </ol>
+                <p style="margin-top:10px; font-size:11px;">Cada propuesta incluye: justificación, datos de soporte, y requiere aprobación humana explícita para aplicarse. No hay ejecución automática de cambios.</p>
+                `
+    },
+    {
+        cat: 'lila',
+        title: 'Auditoría y Trazabilidad',
+        icon: '📋',
+        content: `
+                <p>El sistema mantiene registro completo de decisiones para auditoría:</p>
+                <ul style="margin-left:20px; margin-top:8px; font-size:12px; color:var(--text-dim);">
+                    <li><strong>Traceability:</strong> Cada acción de control genera entradas en <code>memory/iterations/</code> con timestamp y parámetros.</li>
+                    <li><strong>Event Log:</strong> Últimos 200 eventos en memoria (info/warning/critical) visibles en Dashboard y vía <code>/api/events</code>.</li>
+                    <li><strong>Incident Registry:</strong> Errores y anomalías se registran automáticamente con severity y contexto.</li>
+                    <li><strong>ADR Registry:</strong> Decisiones arquitectónicas importantes se documentan en <code>docs/adr/</code>.</li>
+                </ul>
+                <p style="margin-top:10px; font-size:11px; color:var(--text-dim);">Nota: En FASE 0 los logs se mantienen en memoria y se persisten en snapshots. La exportación a CSV/PDF y almacenamiento a largo plazo están planificados para fases posteriores.</p>
+                `
     },
     {
         cat: 'doc',
-        title: 'Motor Scalping: VWAP + OBI + CumDelta',
-        icon: '🏗️',
+        title: '📡 API Reference — Endpoints Críticos',
+        icon: '📡',
         content: `
-            <p>La arquitectura técnica se basa en tres componentes sincronizados con una latencia combinada de <strong>15ms</strong>:</p>
-            <div style="margin-top:10px; display:flex; flex-direction:column; gap:8px;">
-                <div style="background:var(--bg3); padding:10px; border-radius:8px; border-left:4px solid var(--accent2);">
-                    <strong>1. VWAP Engine:</strong> Calcula barreras dinámicas usando un buffer de 300 ticks (~5 min). Detecta breakouts con precisión estadística.
+                <h4 style="color:var(--accent); margin-bottom:8px;">Sistema y Estado</h4>
+                <div style="background:var(--bg3); padding:10px; border-radius:6px; font-family:monospace; font-size:11px; margin-bottom:12px;">
+                    GET /api/status          → Snapshot completo del sistema<br>
+                        GET /api/events?limit=N  → Últimos N eventos
                 </div>
-                <div style="background:var(--bg3); padding:10px; border-radius:8px; border-left:4px solid var(--accent);">
-                    <strong>2. OBI (Order Book Imbalance):</strong> Analiza la presión de compra/venta en los top 10 niveles del libro. Confirma si el breakout tiene "gasolina" institucional.
-                </div>
-                <div style="background:var(--bg3); padding:10px; border-radius:8px; border-left:4px solid var(--red);">
-                    <strong>3. Cumulative Delta:</strong> Monitorea el volumen ejecutado (Tapes). Detecta reversiones de tendencia antes de que el precio se mueva, permitiendo salidas óptimas.
-                </div>
-            </div>
-        `
+
+                <h4 style="color:var(--accent); margin-bottom:8px;">Kill-Switch (2-pasos)</h4>
+                <div style="background:var(--bg3); padding:10px; border-radius:6px; font-family:monospace; font-size:11px; margin-bottom:12px;">
+                    POST /api/kill-switch/arm     → Paso 1: Solicitar activación<br>
+                        POST /api/kill-switch/confirm → Paso 2: Confirmar<br>
+                            POST /api/kill-switch/reset   → Re-armar
+                        </div>
+
+                        <h4 style="color:var(--accent); margin-bottom:8px;">Rollback</h4>
+                        <div style="background:var(--bg3); padding:10px; border-radius:6px; font-family:monospace; font-size:11px; margin-bottom:12px;">
+                            GET  /api/rollback/list    → Snapshots disponibles<br>
+                                POST /api/rollback/restore → Restaurar (body: {"path": "..."})
+                        </div>
+
+                        <h4 style="color:var(--accent); margin-bottom:8px;">Library (Lila)</h4>
+                        <div style="background:var(--bg3); padding:10px; border-radius:6px; font-family:monospace; font-size:11px; margin-bottom:12px;">
+                            GET  /api/library/status              → Estado biblioteca<br>
+                                GET  /api/library/sources?query=...   → Búsqueda<br>
+                                    POST /api/library/ingest              → Ingestar fuente<br>
+                                        POST /api/library/claims/validate     → Validar claim
+                                    </div>
+
+                                    <h4 style="color:var(--accent); margin-bottom:8px;">Experiment Loop</h4>
+                                    <div style="background:var(--bg3); padding:10px; border-radius:6px; font-family:monospace; font-size:11px;">
+                                        GET  /api/experiment/status   → Estado del loop<br>
+                                            POST /api/experiment/propose  → Crear propuesta<br>
+                                                POST /api/experiment/run      → Ejecutar (walk-forward ≥3 ventanas)
+                                            </div>
+                                            `
+    },
+    {
+        cat: 'doc',
+        title: '📡 API Reference — Memory & Learning',
+        icon: '🧠',
+        content: `
+                                            <h4 style="color:var(--accent); margin-bottom:8px;">Learning & Memory</h4>
+                                            <div style="background:var(--bg3); padding:10px; border-radius:6px; font-family:monospace; font-size:11px; margin-bottom:12px;">
+                                                GET  /api/learning/memory/status         → Snapshot motor memoria<br>
+                                                    GET  /api/learning/memory/entries        → Lista entradas<br>
+                                                        POST /api/learning/memory/ingest         → Ingestar entrada<br>
+                                                            POST /api/learning/memory/promote       → Promover nivel<br>
+                                                                POST /api/learning/memory/retention/run → Ejecutar retención TTL<br>
+                                                                    POST /api/learning/memory/regime/check  → Detectar cambio régimen
+                                                                </div>
+
+                                                                <h4 style="color:var(--accent); margin-bottom:8px;">Risk Parameters</h4>
+                                                                <div style="background:var(--bg3); padding:10px; border-radius:6px; font-family:monospace; font-size:11px; margin-bottom:12px;">
+                                                                    GET  /api/risk/params → Leer parámetros actuales<br>
+                                                                        POST /api/risk/params → Actualizar (body: {"max_drawdown_session_pct": 4.0})
+                                                                </div>
+
+                                                                <h4 style="color:var(--accent); margin-bottom:8px;">LLM Assistant</h4>
+                                                                <div style="background:var(--bg3); padding:10px; border-radius:6px; font-family:monospace; font-size:11px;">
+                                                                    POST /api/assistant/chat       → Chat con Lila<br>
+                                                                        POST /api/learning/ingest/history → Ingesta iteraciones/ADRs
+                                                                </div>
+                                                                `
+    },
+    {
+        cat: 'doc',
+        title: '🏷️ Modelos de Dominio — ApproachType',
+        icon: '🏷️',
+        content: `
+                                                                <p style="margin-bottom:10px;">Taxonomía de acercamientos a zona de precio:</p>
+                                                                <table style="width:100%; border-collapse:collapse; font-size:11px;">
+                                                                    <thead>
+                                                                        <tr style="border-bottom:1px solid var(--border); text-align:left;">
+                                                                            <th style="padding:6px;">Valor</th>
+                                                                            <th style="padding:6px;">Descripción</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody>
+                                                                        <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                                                            <td style="padding:6px; color:var(--accent); font-family:monospace;">TOUCH</td>
+                                                                            <td style="padding:6px;">Precio alcanza zona sin cierre beyond</td>
+                                                                        </tr>
+                                                                        <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                                                            <td style="padding:6px; color:var(--accent); font-family:monospace;">RETEST</td>
+                                                                            <td style="padding:6px;">Regresa tras haber cerrado fuera</td>
+                                                                        </tr>
+                                                                        <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                                                            <td style="padding:6px; color:var(--accent); font-family:monospace;">REJECTION</td>
+                                                                            <td style="padding:6px;">Mecha opuesta >60% del rango</td>
+                                                                        </tr>
+                                                                        <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                                                            <td style="padding:6px; color:var(--accent); font-family:monospace;">BREAKOUT</td>
+                                                                            <td style="padding:6px;">Cierre confirmado beyond zona</td>
+                                                                        </tr>
+                                                                        <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                                                            <td style="padding:6px; color:var(--accent); font-family:monospace;">OVERSHOOT</td>
+                                                                            <td style="padding:6px;">Cierre beyond zona sin retorno en N velas</td>
+                                                                        </tr>
+                                                                        <tr>
+                                                                            <td style="padding:6px; color:var(--accent); font-family:monospace;">FAKE_BREAK</td>
+                                                                            <td style="padding:6px;">Cierre beyond zona con retorno en N velas</td>
+                                                                        </tr>
+                                                                    </tbody>
+                                                                </table>
+                                                                `
+    },
+    {
+        cat: 'doc',
+        title: '📊 Modelos de Dominio — MemoryLevel',
+        icon: '📊',
+        content: `
+                                                                <p style="margin-bottom:10px;">Jerarquía de memoria con TTL y aprobadores:</p>
+                                                                <table style="width:100%; border-collapse:collapse; font-size:11px;">
+                                                                    <thead>
+                                                                        <tr style="border-bottom:1px solid var(--border); text-align:left;">
+                                                                            <th style="padding:6px;">Nivel</th>
+                                                                            <th style="padding:6px;">Código</th>
+                                                                            <th style="padding:6px;">TTL</th>
+                                                                            <th style="padding:6px;">Aprobador</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody>
+                                                                        <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                                                            <td style="padding:6px;">RAW</td>
+                                                                            <td style="padding:6px; color:var(--accent); font-family:monospace;">0a</td>
+                                                                            <td style="padding:6px;">24h</td>
+                                                                            <td style="padding:6px;">Automático</td>
+                                                                        </tr>
+                                                                        <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                                                            <td style="padding:6px;">NORMALIZED</td>
+                                                                            <td style="padding:6px; color:var(--accent); font-family:monospace;">0b</td>
+                                                                            <td style="padding:6px;">7d</td>
+                                                                            <td style="padding:6px;">Automático</td>
+                                                                        </tr>
+                                                                        <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                                                            <td style="padding:6px;">FACTS</td>
+                                                                            <td style="padding:6px; color:var(--accent); font-family:monospace;">1</td>
+                                                                            <td style="padding:6px;">30d</td>
+                                                                            <td style="padding:6px;">Lila</td>
+                                                                        </tr>
+                                                                        <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                                                            <td style="padding:6px;">RELATIONS</td>
+                                                                            <td style="padding:6px; color:var(--accent); font-family:monospace;">2</td>
+                                                                            <td style="padding:6px;">90d</td>
+                                                                            <td style="padding:6px;">Lila</td>
+                                                                        </tr>
+                                                                        <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                                                            <td style="padding:6px;">PLAYBOOKS</td>
+                                                                            <td style="padding:6px; color:var(--accent); font-family:monospace;">3</td>
+                                                                            <td style="padding:6px;">∞</td>
+                                                                            <td style="padding:6px;">Humano</td>
+                                                                        </tr>
+                                                                        <tr>
+                                                                            <td style="padding:6px;">STRATEGY</td>
+                                                                            <td style="padding:6px; color:var(--accent); font-family:monospace;">4</td>
+                                                                            <td style="padding:6px;">∞</td>
+                                                                            <td style="padding:6px;">Humano</td>
+                                                                        </tr>
+                                                                    </tbody>
+                                                                </table>
+                                                                <p style="margin-top:10px; font-size:11px; color:var(--text-dim);">
+                                                                    Promoción a STRATEGY requiere experimento validado con <code>sharpe_like > 1.5</code>
+                                                                </p>
+                                                                `
+    },
+    {
+        cat: 'doc',
+        title: '📚 Modelos de Dominio — SourceType',
+        icon: '📚',
+        content: `
+                                                                <p style="margin-bottom:10px;">Clasificación de fuentes de conocimiento:</p>
+                                                                <table style="width:100%; border-collapse:collapse; font-size:11px;">
+                                                                    <thead>
+                                                                        <tr style="border-bottom:1px solid var(--border); text-align:left;">
+                                                                            <th style="padding:6px;">Tipo</th>
+                                                                            <th style="padding:6px;">ev_level</th>
+                                                                            <th style="padding:6px;">Requisitos</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody>
+                                                                        <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                                                            <td style="padding:6px; color:var(--accent); font-family:monospace;">primary</td>
+                                                                            <td style="padding:6px;">1</td>
+                                                                            <td style="padding:6px;">Peer-reviewed, venue reconocido</td>
+                                                                        </tr>
+                                                                        <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                                                            <td style="padding:6px; color:var(--accent); font-family:monospace;">secondary</td>
+                                                                            <td style="padding:6px;">2</td>
+                                                                            <td style="padding:6px;">Blogs, docs técnicas, whitepapers</td>
+                                                                        </tr>
+                                                                        <tr>
+                                                                            <td style="padding:6px; color:var(--accent); font-family:monospace;">tertiary</td>
+                                                                            <td style="padding:6px;">3</td>
+                                                                            <td style="padding:6px;">Social media, foros, opiniones</td>
+                                                                        </tr>
+                                                                    </tbody>
+                                                                </table>
+
+                                                                <h4 style="color:var(--accent); margin:12px 0 8px 0;">Venues primarios reconocidos</h4>
+                                                                <div style="background:var(--bg3); padding:10px; border-radius:6px; font-size:10px; font-family:monospace;">
+                                                                    acl, nips, neurips, icml, jof, journal_of_finance,<br>
+                                                                        journal_of_financial_economics, review_of_financial_studies,<br>
+                                                                            management_science, quantitative_finance
+                                                                        </div>
+                                                                        `
+    },
+    {
+        cat: 'doc',
+        title: 'Arquitectura de Ejecución (Futuro)',
+        icon: '⚡',
+        content: `
+                                                                        <p>Esta sección describe la <strong>arquitectura objetivo</strong> para fases posteriores de CGAlpha (ejecución de alta frecuencia):</p>
+                                                                        <div style="margin-top:10px; display:flex; flex-direction:column; gap:8px;">
+                                                                            <div style="background:var(--bg3); padding:10px; border-radius:8px; border-left:4px solid var(--accent2);">
+                                                                                <strong>1. VWAP Engine:</strong> Calcula barreras dinámicas usando buffer de ticks. Detecta breakouts estadísticos.
+                                                                            </div>
+                                                                            <div style="background:var(--bg3); padding:10px; border-radius:8px; border-left:4px solid var(--accent);">
+                                                                                <strong>2. OBI (Order Book Imbalance):</strong> Analiza presión compra/venta en niveles superiores del libro.
+                                                                            </div>
+                                                                            <div style="background:var(--bg3); padding:10px; border-radius:8px; border-left:4px solid var(--red);">
+                                                                                <strong>3. Cumulative Delta:</strong> Monitorea volumen ejecutado para detectar reversiones tempranas.
+                                                                            </div>
+                                                                        </div>
+                                                                        <p style="margin-top:12px; font-size:11px; color:var(--text-dim);">Nota: Esta arquitectura requiere conexión WebSocket a exchanges y está planificada para fases posteriores. FASE 0 opera en modo polling REST con datos mock.</p>
+                                                                        `
     },
     {
         cat: 'doc',
         title: 'Gestión de Memoria y Teoría Live',
         icon: '🧠',
         content: `
-            <p>El sistema "Theory Live" permite validar hipótesis contra la biblioteca de documentos científicos (Library).</p>
-            <table style="width:100%; border-collapse:collapse; margin-top:10px; font-size:12px;">
-                <thead>
-                    <tr style="border-bottom:1px solid var(--border); text-align:left;">
-                        <th style="padding:4px;">Nivel</th>
-                        <th style="padding:4px;">Tipo de Dato</th>
-                        <th style="padding:4px;">Uso</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
-                        <td style="color:var(--accent); padding:4px;">L0</td>
-                        <td style="padding:4px;">Logs brutos</td>
-                        <td style="padding:4px;">Debug inmediato</td>
-                    </tr>
-                    <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
-                        <td style="color:var(--accent); padding:4px;">L1-L2</td>
-                        <td style="padding:4px;">Evidencias</td>
-                        <td style="padding:4px;">Auditoría de señales</td>
-                    </tr>
-                    <tr>
-                        <td style="color:var(--accent); padding:4px;">L3-L4</td>
-                        <td style="padding:4px;">Estrategia</td>
-                        <td style="padding:4px;">Refinamiento de Lila</td>
-                    </tr>
-                </tbody>
-            </table>
-        `
+                                                                        <p>El sistema "Theory Live" permite validar hipótesis contra la biblioteca de documentos científicos (Library).</p>
+                                                                        <table style="width:100%; border-collapse:collapse; margin-top:10px; font-size:12px;">
+                                                                            <thead>
+                                                                                <tr style="border-bottom:1px solid var(--border); text-align:left;">
+                                                                                    <th style="padding:4px;">Nivel</th>
+                                                                                    <th style="padding:4px;">Tipo de Dato</th>
+                                                                                    <th style="padding:4px;">Uso</th>
+                                                                                </tr>
+                                                                            </thead>
+                                                                            <tbody>
+                                                                                <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                                                                    <td style="color:var(--accent); padding:4px;">L0</td>
+                                                                                    <td style="padding:4px;">Logs brutos</td>
+                                                                                    <td style="padding:4px;">Debug inmediato</td>
+                                                                                </tr>
+                                                                                <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                                                                    <td style="color:var(--accent); padding:4px;">L1-L2</td>
+                                                                                    <td style="padding:4px;">Evidencias</td>
+                                                                                    <td style="padding:4px;">Auditoría de señales</td>
+                                                                                </tr>
+                                                                                <tr>
+                                                                                    <td style="color:var(--accent); padding:4px;">L3-L4</td>
+                                                                                    <td style="padding:4px;">Estrategia</td>
+                                                                                    <td style="padding:4px;">Refinamiento de Lila</td>
+                                                                                </tr>
+                                                                            </tbody>
+                                                                        </table>
+                                                                        `
+    },
+    {
+        cat: 'doc',
+        title: 'Biblioteca de Estrategias',
+        icon: '📚',
+        content: `
+                                                                        <p>La Library contiene estrategias categorizadas y versionadas:</p>
+                                                                        <div style="margin-top:10px; display:flex; flex-direction:column; gap:8px; font-size:12px;">
+                                                                            <div><strong style="color:var(--accent2);">📈 Trend Following:</strong> Media móvil, MACD, RSI-Stoch combo</div>
+                                                                            <div><strong style="color:var(--accent);">🎯 Mean Reversion:</strong> Bollinger Bands, Z-Score, pairs trading</div>
+                                                                            <div><strong style="color:var(--purple);">⚡ Arbitrage:</strong> Cross-exchange, triangular, funding rate</div>
+                                                                            <div><strong style="color:var(--red);">🛡️ Market Making:</strong> Spread capture, inventory management</div>
+                                                                        </div>
+                                                                        <p style="margin-top:10px; font-size:11px; color:var(--text-dim);">Cada estrategia incluye: código fuente, backtest results, notes de uso, y compatibilidad con símbolos.</p>
+                                                                        `
+    },
+    {
+        cat: 'doc',
+        title: 'Experiment Loop y Validación',
+        icon: '🧪',
+        content: `
+                                                                        <p>El pipeline de experimentos valida hipótesis antes de promover a estrategia de producción:</p>
+                                                                        <ol style="margin-left:20px; margin-top:8px; font-size:12px; color:var(--text-dim);">
+                                                                            <li><strong>Proposal:</strong> Definir hipótesis, approach_types y justificación científica.</li>
+                                                                            <li><strong>Backtest (Walk-Forward):</strong> Validación temporal con ≥3 ventanas (in-sample + out-of-sample). Bloquea automáticamente si detecta temporal leakage.</li>
+                                                                            <li><strong>Evaluación:</strong> Métricas calculadas: Sharpe, Sortino, Max Drawdown, Win Rate.</li>
+                                                                            <li><strong>Hardening (P3):</strong> Revisión final antes de permitir promoción a STRATEGY.</li>
+                                                                            <li><strong>Promoción:</strong> Requiere sharpe_like > 1.5 + aprobación humana para alcanzar MemoryLevel.STRATEGY.</li>
+                                                                        </ol>
+                                                                        <div style="margin-top:10px; padding:8px; background:rgba(0,212,170,0.05); border-radius:6px; font-size:11px;">
+                                                                            <strong>Nota:</strong> El Experiment Loop actual ejecuta en foreground (síncrono). La GUI muestra progreso y resultado final.
+                                                                        </div>
+                                                                        `
+    },
+    {
+        cat: 'doc',
+        title: 'Métricas de Performance',
+        icon: '📊',
+        content: `
+                                                                        <p>El sistema calcula y muestra las siguientes métricas:</p>
+                                                                        <table style="width:100%; border-collapse:collapse; margin-top:10px; font-size:11px;">
+                                                                            <thead>
+                                                                                <tr style="border-bottom:1px solid var(--border);">
+                                                                                    <th style="padding:4px; text-align:left;">Métrica</th>
+                                                                                    <th style="padding:4px; text-align:left;">Descripción</th>
+                                                                                    <th style="padding:4px; text-align:left;">Target</th>
+                                                                                </tr>
+                                                                            </thead>
+                                                                            <tbody>
+                                                                                <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                                                                    <td style="padding:4px;">Sharpe Ratio</td>
+                                                                                    <td style="padding:4px;">Retorno ajustado por volatilidad</td>
+                                                                                    <td style="padding:4px; color:var(--accent);">> 2.0</td>
+                                                                                </tr>
+                                                                                <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                                                                    <td style="padding:4px;">Sortino Ratio</td>
+                                                                                    <td style="padding:4px;">Sharpe considerando downside</td>
+                                                                                    <td style="padding:4px; color:var(--accent);">> 2.5</td>
+                                                                                </tr>
+                                                                                <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                                                                    <td style="padding:4px;">Max Drawdown</td>
+                                                                                    <td style="padding:4px;">Pérdida máxima desde pico</td>
+                                                                                    <td style="padding:4px; color:var(--red);">&lt; 10%</td>
+                                                                                </tr>
+                                                                                <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                                                                    <td style="padding:4px;">Calmar Ratio</td>
+                                                                                    <td style="padding:4px;">Return / Max DD anualizado</td>
+                                                                                    <td style="padding:4px; color:var(--accent);">> 2.0</td>
+                                                                                </tr>
+                                                                                <tr>
+                                                                                    <td style="padding:4px;">Win Rate</td>
+                                                                                    <td style="padding:4px;">% trades rentables</td>
+                                                                                    <td style="padding:4px; color:var(--accent);">> 55%</td>
+                                                                                </tr>
+                                                                            </tbody>
+                                                                        </table>
+                                                                        `
     },
     {
         cat: 'auditoria',
         title: 'Protocolo de Hardening P3',
-        icon: '📋',
+        icon: '🔒',
         content: `
-            <p>La Fase P3 representa el estado de "Producción Endurecida". Incluye:</p>
-            <ul style="margin-left:20px; margin-top:8px; font-size:13px; color:var(--text-dim);">
-                <li><strong>No-Leakage E2E:</strong> Pruebas que garantizan que el sistema no conoce el futuro durante el backtesting.</li>
-                <li><strong>Rollback Atómico:</strong> Capacidad de volver a un estado estable (Snapshot) en &lt;2 segundos si se detecta deriva de métricas.</li>
-                <li><strong>Change Proposer:</strong> Todas las modificaciones al código son propuestas por Lila y deben ser validadas por el pipeline de tests automáticos.</li>
-            </ul>
-        `
+                                                                        <p>La Fase P3 representa el estado de "Producción Endurecida". Incluye:</p>
+                                                                        <ul style="margin-left:20px; margin-top:8px; font-size:13px; color:var(--text-dim);">
+                                                                            <li><strong>No-Leakage E2E:</strong> Pruebas que garantizan que el sistema no conoce el futuro durante el backtesting.</li>
+                                                                            <li><strong>Rollback Atómico:</strong> Capacidad de volver a un estado estable (Snapshot) en &lt;2 segundos si se detecta deriva de métricas.</li>
+                                                                            <li><strong>Change Proposer:</strong> Todas las modificaciones al código son propuestas por Lila y deben ser validadas por el pipeline de tests automáticos.</li>
+                                                                        </ul>
+                                                                        `
+    },
+    {
+        cat: 'auditoria',
+        title: 'Logs y Debugging',
+        icon: '📝',
+        content: `
+                                                                        <p>Sistema de logging multinivel:</p>
+                                                                        <ul style="margin-left:20px; margin-top:8px; font-size:12px; color:var(--text-dim);">
+                                                                            <li><strong style="color:var(--red);">ERROR:</strong> Fallos críticos que requieren acción inmediata</li>
+                                                                            <li><strong style="color:orange;">WARN:</strong> Anomalías que no bloquean pero deben investigarse</li>
+                                                                            <li><strong style="color:var(--accent);">INFO:</strong> Eventos normales del sistema</li>
+                                                                            <li><strong>DEBUG:</strong> Detalle técnico para troubleshooting</li>
+                                                                        </ul>
+                                                                        <p style="margin-top:10px; font-size:11px;">Filtre logs por: símbolo, nivel, timestamp, o módulo. Exporte a archivo para análisis offline.</p>
+                                                                        `
+    },
+    {
+        cat: 'auditoria',
+        title: 'Rollback y Recovery',
+        icon: '↩️',
+        content: `
+                                                                        <p>El sistema mantiene snapshots para recovery:</p>
+                                                                        <ol style="margin-left:20px; margin-top:8px; font-size:12px; color:var(--text-dim);">
+                                                                            <li><strong>Auto-snapshot:</strong> Cada 10 minutos o antes de cambios significativos</li>
+                                                                            <li><strong>Manual snapshot:</strong> Antes de updates mayores</li>
+                                                                            <li><strong>Restore:</strong> Seleccione snapshot y confirme - sistema reinicia en ~30s</li>
+                                                                            <li><strong>Diff:</strong> Compare dos snapshots para ver qué cambió</li>
+                                                                        </ol>
+                                                                        <div style="margin-top:10px; padding:8px; background:rgba(255,107,107,0.08); border-radius:6px; font-size:11px;">
+                                                                            <strong style="color:var(--red);">⚠️ Importante:</strong> El restore solo afecta la config/estrategias. Las posiciones reales deben cerrarse manualmente.
+                                                                        </div>
+                                                                        `
+    },
+    {
+        cat: 'auditoria',
+        title: '⚠️ Troubleshooting — Errores Comunes',
+        icon: '⚠️',
+        content: `
+                                                                        <table style="width:100%; border-collapse:collapse; font-size:11px;">
+                                                                            <thead>
+                                                                                <tr style="border-bottom:1px solid var(--border); text-align:left;">
+                                                                                    <th style="padding:6px;">Error</th>
+                                                                                    <th style="padding:6px;">Causa</th>
+                                                                                    <th style="padding:6px;">Solución</th>
+                                                                                </tr>
+                                                                            </thead>
+                                                                            <tbody>
+                                                                                <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                                                                    <td style="padding:6px; color:var(--red); font-family:monospace;">Unauthorized</td>
+                                                                                    <td style="padding:6px;">Token faltante o incorrecto</td>
+                                                                                    <td style="padding:6px;">Agregar header <code>Authorization: Bearer &lt;token&gt;</code></td>
+                                                                                </tr>
+                                                                                <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                                                                    <td style="padding:6px; color:var(--red); font-family:monospace;">temporal_leakage</td>
+                                                                                    <td style="padding:6px;">Feature timestamp > OOS start</td>
+                                                                                    <td style="padding:6px;">Verificar timestamps en datos de entrada</td>
+                                                                                </tr>
+                                                                                <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                                                                    <td style="padding:6px; color:var(--red); font-family:monospace;">production_gate_rejected</td>
+                                                                                    <td style="padding:6px;">Promoción sin validación</td>
+                                                                                    <td style="padding:6px;">Ejecutar experimento con sharpe > 1.5</td>
+                                                                                </tr>
+                                                                                <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                                                                    <td style="padding:6px; color:var(--red); font-family:monospace;">primary_source_gap</td>
+                                                                                    <td style="padding:6px;">Claim sin fuente primaria</td>
+                                                                                    <td style="padding:6px;">Ingestar fuente con source_type=primary</td>
+                                                                                </tr>
+                                                                                <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                                                                    <td style="padding:6px; color:var(--red); font-family:monospace;">invalid_approach_type</td>
+                                                                                    <td style="padding:6px;">Valor no en taxonomía</td>
+                                                                                    <td style="padding:6px;">Usar TOUCH|RETEST|REJECTION|BREAKOUT|OVERSHOOT|FAKE_BREAK</td>
+                                                                                </tr>
+                                                                                <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                                                                    <td style="padding:6px; color:var(--red); font-family:monospace;">insufficient_windows</td>
+                                                                                    <td style="padding:6px;">Walk-forward < 3 ventanas</td>
+                                                                                    <td style="padding:6px;">Proporcionar más datos históricos</td>
+                                                                                </tr>
+                                                                                <tr>
+                                                                                    <td style="padding:6px; color:var(--red); font-family:monospace;">regime_shift_detected</td>
+                                                                                    <td style="padding:6px;">Volatilidad > 2σ del baseline</td>
+                                                                                    <td style="padding:6px;">Revisar parámetros o degradar memoria</td>
+                                                                                </tr>
+                                                                            </tbody>
+                                                                        </table>
+                                                                        `
+    },
+    {
+        cat: 'auditoria',
+        title: '🔒 Producción — Consideraciones de Seguridad',
+        icon: '🔒',
+        content: `
+                                                                        <h4 style="color:var(--accent); margin-bottom:8px;">Token de autenticación</h4>
+                                                                        <div style="background:var(--bg3); padding:10px; border-radius:6px; font-family:monospace; font-size:11px; margin-bottom:12px;">
+                                                                            # Generar token seguro (32+ caracteres)
+                                                                            export CGV3_AUTH_TOKEN="$(openssl rand -hex 32)"
+                                                                        </div>
+
+                                                                        <h4 style="color:var(--accent); margin-bottom:8px;">Reverse Proxy (nginx)</h4>
+                                                                        <div style="background:var(--bg3); padding:10px; border-radius:6px; font-size:11px; margin-bottom:12px;">
+                                                                            server {<br>
+                                                                                &nbsp;&nbsp;listen 443 ssl;<br>
+                                                                                    &nbsp;&nbsp;server_name control.tudominio.com;<br>
+                                                                                        &nbsp;&nbsp;ssl_certificate /path/to/cert.pem;<br>
+                                                                                            &nbsp;&nbsp;ssl_certificate_key /path/to/key.pem;<br>
+                                                                                                <br>
+                                                                                                    &nbsp;&nbsp;location / {<br>
+                                                                                                        &nbsp;&nbsp;&nbsp;&nbsp;proxy_pass http://127.0.0.1:8080;<br>
+                                                                                                            &nbsp;&nbsp;&nbsp;&nbsp;proxy_set_header Host $host;<br>
+&nbsp;&nbsp;}<br>
+}
+                                                                                                                </div>
+
+                                                                                                                <h4 style="color:var(--accent); margin-bottom:8px;">Health Checks</h4>
+                                                                                                                <div style="background:var(--bg3); padding:10px; border-radius:6px; font-size:11px;">
+                                                                                                                    GET /api/status → Monitorear system_status, data_quality<br>
+                                                                                                                        GET /api/events → Alertar si hay eventos con severity=critical
+                                                                                                                </div>
+                                                                                                                `
     },
     {
         cat: 'faq',
@@ -1116,11 +1853,18 @@ const HELP_DATA = [
         icon: '❓',
         isFaq: true,
         items: [
-            { q: '¿Qué es el Temporal Leakage?', a: 'Es un error común donde el algoritmo usa datos del futuro (inconscientemente) para entrenarse. v3.1 tiene gates matemáticos que bloquean cualquier estrategia con leakage detectado.' },
-            { q: '¿Por qué el Kill-Switch está siempre armado?', a: 'Es un protocolo de seguridad industrial. Preferimos detener el sistema ante una duda técnica que arriesgar capital en un mercado volátil.' },
-            { q: '¿Cómo añado nuevos papers a la Library?', a: 'Vaya a la pestaña "Library" y use el formulario de Ingesta. Lila procesará el PDF/Texto y extraerá los findings automáticamente.' },
-            { q: '¿Qué significa "Regime Shift Detected"?', a: 'Significa que las condiciones del mercado (volatilidad, spread, volumen) han cambiado tanto que los modelos actuales podrían no ser válidos. El sistema sugiere recalibrar.' },
-            { q: '¿Puedo usar CGAlpha v3 para scalping manual?', a: 'Sí, a través de la pestaña "Dashboard" puede ejecutar órdenes manuales que Lila supervisará con los mismos Circuit Breakers del modo automático.' }
+            { q: '¿Qué es el Temporal Leakage?', a: 'Es un error común donde el algoritmo usa datos del futuro (inconscientemente) para entrenarse. CGAlpha tiene gates matemáticos que bloquean cualquier experimento con leakage detectado (error: temporal_leakage).' },
+            { q: '¿Por qué el Kill-Switch está armado por defecto?', a: 'Es un protocolo de seguridad operativa. Al arrancar, el sistema debe estar en estado “armed” para poder detenerse inmediatamente ante una anomalía detectada por Risk Dashboard.' },
+            { q: '¿Cómo añado nuevos papers a la Library?', a: 'Ve a la pestaña Library, rellena el formulario de Ingesta (título, autores, venue, abstract, etc.) y haz clic en “Ingestar”. Si el venue está en la lista de primarios (ACL, NeurIPS, JOF, etc.), se clasificará automáticamente como primary.' },
+            { q: '¿Qué significa "Regime Shift Detected"?', a: 'El MemoryPolicyEngine detectó que la volatilidad actual supera 2 desviaciones estándar del baseline. Esto puede degradar automáticamente entradas de memoria de nivel alto (PLAYBOOKS/STRATEGY) a nivel más bajo para evitar decisiones obsoletas.' },
+            { q: '¿Puedo operar en modo live con dinero real?', a: 'No en FASE 0. La GUI actual es “Control Room” con datos mock (precios simulados). La fase actual sirve para validar lógica de riesgo, Library y Memory antes de conectar exchanges reales.' },
+            { q: '¿Cómo funciona el Experiment Loop?', a: 'Crea una Proposal (hipótesis + approach_types), ejecútala con “Run Experiment”. El sistema hará walk-forward validation (≥3 ventanas) y calculará métricas (sharpe, sortino, max_dd). Solo con sharpe > 1.5 y aprobación humana se puede promover a STRATEGY.' },
+            { q: '¿Qué pasa si el servidor pierde conexión?', a: 'La GUI dejará de recibir polling (cada 5s). El indicador de pulso se apagará (gris) y mostrará último estado conocido. Al recuperar conexión, se sincroniza automáticamente vía /api/status.' },
+            { q: '¿Cómo hago rollback si algo sale mal?', a: 'En Mission Control se listan los snapshots disponibles. Selecciona uno y pulsa “Restaurar”. Esto recupera configuración, memoria y estado de experimentos al momento del snapshot (SLA <60s).' },
+            { q: '¿Cómo contacto soporte?', a: 'Revisa la documentación en Help > Documentación y README.md. Para consultas técnicas, usa el chat de Lila con comandos como /status o /risk. No hay soporte telefónico ni email en esta versión.' },
+            { q: '¿Cuántas ventanas mínimas necesita walk-forward?', a: 'Mínimo 3 ventanas para validación estadística. Cada ventana debe tener suficientes datos para entrenamiento (in-sample) y test out-of-sample (OOS).' },
+            { q: '¿Cómo promuevo una entrada de memoria a STRATEGY?', a: 'Requisitos: (1) Experimento validado con sharpe_like > 1.5, (2) Aprobación humana (approver_by), (3) Ejecutar POST /api/learning/memory/promote con target_level=4. El Production Gate validará automáticamente.' },
+            { q: '¿Qué significa "primary_source_gap"?', a: 'Aparece cuando intentas validar un claim (hipótesis) pero no hay fuentes primary (ev_level=1) en la Library que lo respalden. Solución: ingesta al menos una fuente primary relacionada con el claim.' }
         ]
     }
 ];
@@ -1135,47 +1879,88 @@ function helpSearch(cat) {
     renderHelpArticles(HELP_DATA.filter(d => d.cat === cat));
 }
 
+let helpDebounceTimer = null;
 function filterHelp() {
-    const q = document.getElementById('help-search-input').value.toLowerCase();
-    const matches = HELP_DATA.filter(d =>
-        d.title.toLowerCase().includes(q) ||
-        d.content?.toLowerCase()?.includes(q) ||
-        (d.items && d.items.some(f => f.q.toLowerCase().includes(q)))
-    );
-    renderHelpArticles(matches);
+    clearTimeout(helpDebounceTimer);
+    helpDebounceTimer = setTimeout(() => {
+        const q = document.getElementById('help-search-input').value.toLowerCase();
+        const matches = HELP_DATA.filter(d =>
+            d.title.toLowerCase().includes(q) ||
+            d.content?.toLowerCase()?.includes(q) ||
+            (d.items && d.items.some(f => f.q.toLowerCase().includes(q)))
+        );
+        renderHelpArticles(matches, q);
+    }, 150);
 }
 
-function renderHelpArticles(data) {
+function highlightMatch(text, query) {
+    if (!query || !text) return text;
+    const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    return text.replace(regex, '<mark>$1</mark>');
+}
+
+function renderHelpArticles(data, searchQuery = '') {
     const container = document.getElementById('help-articles');
     if (!container) return;
-    container.innerHTML = '';
 
     if (data.length === 0) {
-        container.innerHTML = '<div style="color:var(--text-muted)">No se encontraron artículos que coincidan con tu búsqueda.</div>';
+        container.innerHTML = `
+            <div class="help-empty">
+                <span style="font-size:2rem;display:block;margin-bottom:10px;">🔍</span>
+                No se encontraron artículos que coincidan con tu búsqueda.
+            </div>`;
         return;
     }
+
+    const fragment = document.createDocumentFragment();
 
     data.forEach(item => {
         const div = document.createElement('div');
         div.className = 'help-card';
 
         if (item.isFaq) {
-            div.innerHTML = `<h4>${item.icon} ${item.title}</h4>`;
-            item.items.forEach(faq => {
+            const titleHtml = searchQuery ? highlightMatch(item.title, searchQuery) : item.title;
+            div.innerHTML = `<h4>${item.icon} ${titleHtml}</h4>`;
+            item.items.forEach((faq, idx) => {
                 const fdiv = document.createElement('div');
                 fdiv.className = 'help-faq-item';
+                fdiv.dataset.faqId = `faq-${item.cat}-${idx}`;
+                const qHtml = searchQuery ? highlightMatch(faq.q, searchQuery) : faq.q;
+                const aHtml = searchQuery ? highlightMatch(faq.a, searchQuery) : faq.a;
                 fdiv.innerHTML = `
-                    <div class="help-faq-q" onclick="this.parentElement.classList.toggle('open')">${faq.q} <span>▼</span></div>
-                    <div class="help-faq-a">${faq.a}</div>
-                `;
+                                                                                                                <div class="help-faq-q" onclick="toggleFaq('${item.cat}', ${idx})">${qHtml} <span class="faq-arrow">▼</span></div>
+                                                                                                                <div class="help-faq-a" id="faq-${item.cat}-${idx}">${aHtml}</div>
+                                                                                                                `;
                 div.appendChild(fdiv);
             });
         } else {
+            const titleHtml = searchQuery ? highlightMatch(item.title, searchQuery) : item.title;
+            const contentHtml = searchQuery ? highlightMatch(item.content, searchQuery) : item.content;
             div.innerHTML = `
-                <h4>${item.icon} ${item.title}</h4>
-                <p>${item.content}</p>
-            `;
+                                                                                                                <h4>${item.icon} ${titleHtml}</h4>
+                                                                                                                <p>${contentHtml}</p>
+                                                                                                                `;
         }
-        container.appendChild(div);
+        fragment.appendChild(div);
     });
+
+    container.innerHTML = '';
+    container.appendChild(fragment);
+}
+
+function toggleFaq(cat, idx) {
+    const targetId = `faq-${cat}-${idx}`;
+    const allFaqs = document.querySelectorAll('.help-faq-a');
+    const target = document.getElementById(targetId);
+    const wasOpen = target.classList.contains('open');
+
+    allFaqs.forEach(f => {
+        f.classList.remove('open');
+        f.style.maxHeight = '0';
+    });
+
+    if (!wasOpen) {
+        target.classList.add('open');
+        target.style.maxHeight = target.scrollHeight + 'px';
+    }
 }

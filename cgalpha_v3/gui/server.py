@@ -22,6 +22,11 @@ from typing import Any
 
 from flask import Flask, jsonify, request, send_from_directory
 from flask.typing import ResponseReturnValue
+from dotenv import load_dotenv
+
+# Cargar variables de entorno desde .env (en raíz de v3)
+v3_env_path = Path(__file__).parent.parent / ".env"
+load_dotenv(dotenv_path=v3_env_path)
 
 # ---------------------------------------------------------------------------
 # Configuración
@@ -40,7 +45,7 @@ app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path='')
 # ---------------------------------------------------------------------------
 # Estado global y Managers
 # ---------------------------------------------------------------------------
-from core.llm_assistant_v2 import LLMAssistantV2
+from cgalpha_v3.lila.llm import LLMAssistant
 from cgalpha_v3.application.rollback_manager import RollbackManager
 from cgalpha_v3.application.change_proposer import ChangeProposer
 from cgalpha_v3.application.experiment_runner import ExperimentResult, ExperimentRunner
@@ -62,7 +67,7 @@ _health_monitor = HealthMonitor()
 _promotion_validator = PromotionValidator()
 _production_gate = ProductionGate(_promotion_validator)
 _history_learner = ProjectHistoryLearner(_memory_engine, BASE_DIR.parent.parent) 
-_assistant = LLMAssistantV2() # Modo modular
+_assistant = LLMAssistant() # Migrado a v3
 
 _latest_proposal: Proposal | None = None
 _latest_experiment: ExperimentResult | None = None
@@ -1484,17 +1489,40 @@ def rollback_restore() -> ResponseReturnValue:
         return jsonify({"error": str(e)}), 500
 
 
-# ---------------------------------------------------------------------------
-# Arranque
-# ---------------------------------------------------------------------------
 
-if __name__ == "__main__":
-    _ensure_dirs()
-    print(f"[CGAlpha v3 GUI] Iniciando en http://{HOST}:{PORT}")
-    print(f"[CGAlpha v3 GUI] Auth token activo: {AUTH_TOKEN[:8]}...")
-    print("[CGAlpha v3 GUI] FASE 0 — Control Room en modo mock")
-    _log_event("Control Room iniciado — FASE 0")
-    app.run(host=HOST, port=PORT, debug=False)
+@app.route("/api/lila/llm/status", methods=["GET"])
+@require_auth
+def get_lila_llm_status():
+    """Estado detallado del proveedor de Lila."""
+    try:
+        status = _assistant.get_status()
+        # Enriquecer con lista de disponibles y snapshot de memoria
+        status["available_providers"] = list(_assistant._available_providers.keys())
+        status["memory_levels"] = _memory_engine.snapshot()["levels"]
+        return jsonify(status)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/lila/llm/switch", methods=["POST"])
+@require_auth
+def switch_lila_llm_provider():
+    """Cambiar el proveedor actual de Lila."""
+    data = request.json or {}
+    provider_name = data.get("provider")
+    
+    if not provider_name:
+        return jsonify({"error": "Missing provider name"}), 400
+        
+    success = _assistant.switch_provider(provider_name)
+    if success:
+        return jsonify({
+            "status": "success",
+            "active_provider": _assistant.provider.name
+        })
+    else:
+        return jsonify({"error": f"Failed to switch to {provider_name}"}), 400
+
 @app.route("/api/learning/ingest/history", methods=["POST"])
 @require_auth
 def learning_ingest_history() -> ResponseReturnValue:
@@ -1539,7 +1567,7 @@ def assistant_chat() -> ResponseReturnValue:
         elif "hola" in low_msg:
             resp = "Hola, soy Lila. Estoy monitoreando la integridad de los datos en tiempo real. ¿Deseas analizar algún experimento o que 'aprenda de la historia' v3?"
         else:
-            if os.getenv("OPENAI_API_KEY"):
+            if os.getenv("OPENAI_API_KEY") or os.getenv("ZHIPU_API_KEY"):
                 resp = _assistant.generate(f"Contexto: Trading System v3 Audit. Health: {status}. Pregunta: {message}")
             else:
                 resp = "Analizando... Veo que la integridad temporal es correcta y el Risk Manager está activo. Si quieres que aprenda del pasado, dime 'Lila, aprende de la historia'."
@@ -1555,3 +1583,15 @@ def assistant_chat() -> ResponseReturnValue:
         
     except Exception as exc:
         return jsonify({"response": f"Hubo un error en mi núcleo de procesamiento v3: {exc}"})
+
+# ---------------------------------------------------------------------------
+# Arranque
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    _ensure_dirs()
+    print(f"[CGAlpha v3 GUI] Iniciando en http://{HOST}:{PORT}")
+    print(f"[CGAlpha v3 GUI] Auth token activo: {AUTH_TOKEN[:8]}...")
+    print("[CGAlpha v3 GUI] FASE 0 — Control Room en modo mock")
+    _log_event("Control Room iniciado — FASE 0")
+    app.run(host=HOST, port=PORT, debug=False)
