@@ -347,89 +347,77 @@ async function doRollback(path) {
     }
 }
 
-// ── VAULT (MOSAIC BRIDGE) ──────────────────────────────
+// ── VAULT & ACTIVE CONSTRUCTION (North Star 3.0.0) ──────────────
+async function toggleLilaActiveStrategy() {
+    const strat = document.getElementById("lila-strategy-overlay");
+    if (!strat) return;
+    strat.classList.toggle("hidden");
+    if (!strat.classList.contains("hidden")) {
+        document.getElementById("lila-history-overlay")?.classList.add("hidden");
+        document.getElementById("lila-settings-overlay")?.classList.add("hidden");
+        document.getElementById("lila-vault-overlay")?.classList.add("hidden");
+        fetchStrategyStatus();
+    }
+}
+
+async function fetchStrategyStatus() {
+    const view = document.getElementById("strategy-pipeline-view");
+    if (!view) return;
+    try {
+        const data = await apiFetch("/api/vault/status");
+        view.innerHTML = `
+            <div style="background:rgba(0,212,170,0.05); padding:12px; border-radius:10px; border:1px solid var(--accent); margin-bottom:15px;">
+                <strong style="color:var(--accent); font-size:13px;">Simple Foundation Strategy</strong>
+                <div style="font-size:11px; margin:8px 0;">Hit Rate OOS: <strong style="color:#4f4;">${data.metrics.hit_rate_oos}</strong></div>
+                <button class="btn" style="width:100%;" onclick="executePipelineCycle()">Execute Massive Cycle</button>
+            </div>
+            ${data.components.map(c => `<div style="background:#0f1b2d; padding:8px; border-radius:6px; margin-bottom:5px; border:1px solid rgba(255,255,255,0.05); display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-weight:bold; font-size:11px; color:var(--accent);">${c.name}</span>
+                <span style="font-size:9px; color:#4f4;">${c.status}</span>
+            </div>`).join("")}
+        `;
+    } catch { view.innerHTML = "<p>Error syncing pipeline v3.</p>"; }
+}
+
+async function executePipelineCycle() {
+    if (!confirm("¿Deseas iniciar un Ciclo Masivo de Cosecha y Entrenamiento?")) return;
+    try {
+        const resp = await apiFetch("/api/lila/execute-cycle", { method: 'POST', body: JSON.stringify({ symbol: "BTCUSDT" }) });
+        alert(`Ciclo Completado: ${resp.nexus_decision}`);
+        fetchStrategyStatus();
+    } catch (err) { alert("Error: " + err.message); }
+}
+
 async function toggleLilaVault() {
     const vault = document.getElementById("lila-vault-overlay");
     if (!vault) return;
     vault.classList.toggle("hidden");
-
     if (!vault.classList.contains("hidden")) {
-        // Cerrar otros overlays
         document.getElementById("lila-history-overlay")?.classList.add("hidden");
         document.getElementById("lila-settings-overlay")?.classList.add("hidden");
+        document.getElementById("lila-strategy-overlay")?.classList.add("hidden");
         fetchVaultStatus();
     }
 }
 
 async function fetchVaultStatus() {
-    const listEl = document.getElementById("vault-inventory-list");
-    const visionEl = document.getElementById("vision-map-preview");
+    const listEl = document.getElementById("vault-layers-view");
     if (!listEl) return;
-
     try {
-        const response = await fetch('/api/vault/status', {
-            headers: { 'Authorization': `Bearer ${authToken}` }
-        });
-        const data = await response.json();
-
-        if (data.status === "active") {
-            let html = `
-                <div style="margin-bottom:15px; border-bottom:1px solid #444; padding-bottom:10px;">
-                    <h4 style="color:var(--accent); font-size:12px; margin-bottom:8px;">★ Elite Modules (v1/v2 Heritage)</h4>
-                    <div style="display:flex; flex-direction:column; gap:8px;">
-                        ${data.elite_modules.map(mod => `
-                            <div style="background:linear-gradient(90deg, rgba(0,212,170,0.1), transparent); padding:10px; border-radius:8px; border:1px solid rgba(0,212,170,0.2);">
-                                <div style="display:flex; justify-content:space-between; align-items:center;">
-                                    <span style="font-weight:bold; color:var(--accent); font-size:11px;">${mod.name}</span>
-                                    <span style="font-size:9px; font-weight:bold; color:#4f4;">CATE: ${mod.cate}</span>
-                                </div>
-                                <div style="font-size:9px; opacity:0.6; margin:4px 0;">Role: ${mod.role}</div>
-                                <button class="btn btn-ghost" style="width:100%; padding:4px; font-size:9px; margin-top:5px; border-color:var(--accent);" 
-                                        onclick="incorporateLegacyComponent('${mod.name}', '${mod.path}')">Incorporate to v3</button>
-                            </div>
-                        `).join("")}
-                    </div>
+        const data = await apiFetch("/api/vault/status");
+        listEl.innerHTML = `
+            <h4 style="color:var(--accent); font-size:12px;">Layer 2: Permanent DNA</h4>
+            <div style="background:rgba(0,212,170,0.1); padding:10px; border-radius:10px; border:1px solid var(--accent); margin-bottom:15px;">
+                <span style="font-weight:bold;">Verified Components: ${data.layers.layer_2_permanent_dna.total} ACTIVE</span>
+            </div>
+            <h4 style="font-size:11px; opacity:0.7;">Layer 1: Provisional Vault</h4>
+            ${Object.entries(data.layers.layer_1_provisional).map(([k, v]) => `
+                <div style="background:#0f1b2d; padding:6px; margin-bottom:4px; font-size:10px; display:flex; justify-content:space-between;">
+                    <span>${k}</span><strong>${v}</strong>
                 </div>
-                <div style="opacity:0.9;">
-                    <h4 style="font-size:11px; margin-bottom:10px; opacity:0.7;">Vault Inventory</h4>
-                    ${data.inventory.map(item => `
-                        <div style="background:rgba(255,255,255,0.02); padding:6px; border-radius:4px; margin-bottom:5px;">
-                            <div style="display:flex; justify-content:space-between; align-items:center;">
-                                <span style="font-weight:bold; font-size:10px; color:var(--accent);">${item.category}</span>
-                                <span style="font-size:9px; opacity:0.6;">${item.count} items</span>
-                            </div>
-                        </div>
-                    `).join("")}
-                </div>
-            `;
-            listEl.innerHTML = html;
-            if (visionEl) visionEl.innerText = data.vision_map_summary || "No vision map data.";
-        } else {
-            listEl.innerHTML = `<p style="color:#f44">Vault not active or not found.</p>`;
-        }
-    } catch (err) {
-        console.error("Error fetching vault status:", err);
-        if (listEl) listEl.innerHTML = `<p style="color:#f44">Error connecting to vault master.</p>`;
-    }
-}
-
-async function incorporateLegacyComponent(name, path) {
-    if (!confirm(`¿Deseas iniciar el reciclaje programado de "${name}"? Se enviará a Lila para evaluación de ADAPTER.`)) return;
-    try {
-        const response = await fetch('/api/lila/chat', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${authToken}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ message: `Inicia reciclaje de componente legacy: ${name} en ${path}. Necesito un ADAPTER v3.` })
-        });
-        const data = await response.json();
-        alert(`Lila ha recibido la misión: ${data.response.substring(0, 50)}...`);
-        toggleLilaVault(); // Cerrar
-    } catch (err) {
-        alert("Error en solicitud: " + err.message);
-    }
+            `).join("")}
+        `;
+    } catch { listEl.innerHTML = "<p>Error syncing vault.</p>"; }
 }
 
 // ── LIBRARY ────────────────────────────────────────────
@@ -1036,8 +1024,7 @@ function toggleLilaChat() {
     if (chat.classList.contains("lila-fullscreen")) return; // Prevent collapse if FS
     chat.classList.toggle("lila-collapsed");
 
-    const icon = document.getElementById("lila-toggle-icon");
-    icon.textContent = chat.classList.contains("lila-collapsed") ? "▲" : "▼";
+    // Icon state handled via CSS rotation on #lila-toggle-icon
 }
 
 function toggleLilaFullScreen() {
@@ -1391,16 +1378,11 @@ openai >= 1.0.0  # si OPENAI_API_KEY configurado
     },
     {
         cat: 'lila',
-        title: 'Lila: Asistente v3 y Doble Capa LLM',
+        title: 'Lila Assistant: Orquestador v3',
         icon: '🤖',
         content: `
-                <p>Lila v3 es el <strong>asistente inteligente consolidado</strong> de CGAlpha. Utiliza una arquitectura de doble capa para eficiencia y precisión:</p>
-                <ul style="margin-left:20px; margin-top:8px; font-size:13px; color:var(--text-dim);">
-                    <li><strong>Capa 3 (Sintetizador):</strong> <code>qwen2.5:3b</code>. Razonamiento profundo y validación técnica.</li>
-                    <li><strong>Capa 2 (Recuperador):</strong> <code>qwen2.5:1.5b</code>. Búsqueda semántica rápida en la base de conocimientos.</li>
-                    <li><strong>LLM Hybrid:</strong> Soporta conmutación en caliente entre OpenAI, Zhipu y Ollama (Local).</li>
-                </ul>
-                <p style="margin-top:10px; font-size:12px; color:var(--text-dim);">En FASE 0, Lila ya es conversacional y puede configurarse para usar inteligencia 100% local o en la nube desde el panel de ajustes.</p>
+                <p>En el motor <strong>CGAlpha v3.0</strong>, el asistente actúa como el cerebro orquestador de la <strong>Active Construction Strategy</strong>.</p>
+                <p style="margin-top:10px; font-size:12px; color:var(--text-dim);">Lila gestiona el ADN Permanente (Capa 2), la Trinity (VWAP/OBI/Delta) y el Oracle v3 recursivo. Está preparada para ser dirigida por un Cerebro Externo vía API.</p>
                 `
     },
     {

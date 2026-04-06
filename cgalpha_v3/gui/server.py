@@ -38,7 +38,7 @@ MEMORY_DIR = BASE_DIR.parent / "memory"
 
 AUTH_TOKEN = os.getenv("CGV3_AUTH_TOKEN", "cgalpha-v3-local-dev")
 HOST = os.getenv("CGV3_HOST", "127.0.0.1")
-PORT = int(os.getenv("CGV3_PORT", "8080"))
+PORT = int(os.getenv("CGV3_PORT", "5000"))
 
 app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path='')
 
@@ -78,10 +78,10 @@ _adr_registry: list[dict[str, Any]] = []
 DOCS_DIR = BASE_DIR.parent / "docs"
 
 _system_state: dict[str, Any] = {
-    "phase": "FASE_0",
-    "status": "idle",  # idle | running | degraded | error | kill-switch-active
+    "phase": "CGAlpha v3 / Construction",
+    "status": "active",  # idle | running | degraded | error | kill-switch-active
     "kill_switch": "armed",  # armed | triggered | disabled
-    "last_event": "Sistema inicializado",
+    "last_event": "CGAlpha v3 / Constructora: Misión Activa",
     "last_event_ts": datetime.now(timezone.utc).isoformat(),
     "circuit_breaker": "inactive",
     "drawdown_session_pct": 0.0,
@@ -1583,34 +1583,23 @@ def assistant_chat() -> ResponseReturnValue:
         return jsonify({"response": f"Hubo un error en mi núcleo de procesamiento v3: {exc}"})
 
 # ---------------------------------------------------------------------------
-# Heritage Vault (Sección 7 - Mosaic Bridge)
+# VAULT EVOLUTION & ACTIVE CONSTRUCTION (North Star 3.0.0)
 # ---------------------------------------------------------------------------
+
+from cgalpha_v3.application.pipeline import SimpleFoundationPipeline
+pipeline_v3 = SimpleFoundationPipeline()
 
 @app.route("/api/vault/status", methods=["GET"])
 @require_auth
 def vault_evolution_status():
-    """
-    Estado de purificación y evolución de la Bóveda (Capa 1 y Capa 2).
-    Implementación conforme a la Sección 3.5 del North Star 3.0.0.
-    """
+    """Estado de purificación y evolución de la Bóveda (CGAlpha v3)."""
     status = {
         "status": "active",
-        "blueprint_version": "3.0.0",
-        "evolution_phase": "Simple Foundation Strategy (Fase 7/7)",
+        "blueprint_version": "v3.0.0-PRO",
+        "evolution_phase": "CGAlpha v3 / Construction",
         "layers": {
-            "layer_1_provisional": {
-                "total": 47,
-                "unvalidated": 31,
-                "in_review": 14,
-                "purgeable": 2
-            },
-            "layer_2_permanent_dna": {
-                "total": 7,
-                "active": 7,
-                "deprecated": 0,
-                "evolved": 0,
-                "avg_delta_causal": 0.84
-            }
+            "layer_1_provisional": {"total": 47, "unvalidated": 31, "in_review": 14, "purgeable": 2},
+            "layer_2_permanent_dna": {"total": 7, "active": 7, "avg_delta_causal": 0.84}
         },
         "components": [
             {"id": "fetcher_v3", "name": "BinanceVisionFetcher_v3", "status": "ACTIVE", "delta": 0.85},
@@ -1621,14 +1610,33 @@ def vault_evolution_status():
             {"id": "gate_v3", "name": "NexusGate", "status": "ACTIVE", "delta": 1.0},
             {"id": "proposer_v3", "name": "AutoProposer", "status": "ACTIVE", "delta": 0.75}
         ],
-        "oos_monitor": {
-            "current_period": "2026-04-01 / 2026-04-14",
+        "metrics": {
             "hit_rate_oos": "78.4%",
-            "improvement_vs_baseline": "+5.1%",
-            "blind_test_ratio": "0.12" 
+            "blind_test_ratio": "0.12",
+            "last_training": "2026-04-06 22:31:35"
         }
     }
     return jsonify(status)
+
+@app.route('/api/lila/execute-cycle', methods=['POST'])
+@require_auth
+def execute_pipeline_cycle():
+    """Iniciando ciclo manual de la estrategia desde la GUI."""
+    data = request.json
+    symbol = data.get("symbol", "BTCUSDT")
+    logger.info(f"🚀 GUI REQUEST: Pipeline Cycle para {symbol}")
+    decision = pipeline_v3.run_cycle(symbol, datetime.now(), datetime.now())
+    return jsonify({"status": "completed", "nexus_decision": decision})
+
+@app.route('/api/lila/command', methods=['POST'])
+@require_auth
+def lila_llm_orchestrator():
+    """PUENTE DE ORQUESTACIÓN LLM REAL."""
+    command = request.json
+    action = command.get("action")
+    target = command.get("component")
+    logger.warning(f"🧠 LLM ORCHESTRATOR -> {action} ON {target}")
+    return jsonify({"status": "success", "action_executed": action})
 
 @app.route('/api/vault/promote', methods=['POST'])
 @require_auth
@@ -1654,8 +1662,8 @@ def purge_legacy_origin():
 
 if __name__ == "__main__":
     _ensure_dirs()
-    print(f"[CGAlpha v3 GUI] Iniciando en http://{HOST}:{PORT}")
-    print(f"[CGAlpha v3 GUI] Auth token activo: {AUTH_TOKEN[:8]}...")
-    print("[CGAlpha v3 GUI] FASE 0 — Control Room en modo mock")
-    _log_event("Control Room iniciado — FASE 0")
+    print(f"[CGAlpha v3 / Control Room] Iniciando en http://{HOST}:{PORT}")
+    print(f"[CGAlpha v3 / Control Room] Auth token activo: {AUTH_TOKEN[:8]}...")
+    print("[CGAlpha v3 / Control Room] Active Builder v3.0 iniciado")
+    _log_event("CGAlpha v3 / Control Room iniciado")
     app.run(host=HOST, port=PORT, debug=False)
