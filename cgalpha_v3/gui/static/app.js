@@ -347,6 +347,91 @@ async function doRollback(path) {
     }
 }
 
+// ── VAULT (MOSAIC BRIDGE) ──────────────────────────────
+async function toggleLilaVault() {
+    const vault = document.getElementById("lila-vault-overlay");
+    if (!vault) return;
+    vault.classList.toggle("hidden");
+
+    if (!vault.classList.contains("hidden")) {
+        // Cerrar otros overlays
+        document.getElementById("lila-history-overlay")?.classList.add("hidden");
+        document.getElementById("lila-settings-overlay")?.classList.add("hidden");
+        fetchVaultStatus();
+    }
+}
+
+async function fetchVaultStatus() {
+    const listEl = document.getElementById("vault-inventory-list");
+    const visionEl = document.getElementById("vision-map-preview");
+    if (!listEl) return;
+
+    try {
+        const response = await fetch('/api/vault/status', {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const data = await response.json();
+
+        if (data.status === "active") {
+            let html = `
+                <div style="margin-bottom:15px; border-bottom:1px solid #444; padding-bottom:10px;">
+                    <h4 style="color:var(--accent); font-size:12px; margin-bottom:8px;">★ Elite Modules (v1/v2 Heritage)</h4>
+                    <div style="display:flex; flex-direction:column; gap:8px;">
+                        ${data.elite_modules.map(mod => `
+                            <div style="background:linear-gradient(90deg, rgba(0,212,170,0.1), transparent); padding:10px; border-radius:8px; border:1px solid rgba(0,212,170,0.2);">
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <span style="font-weight:bold; color:var(--accent); font-size:11px;">${mod.name}</span>
+                                    <span style="font-size:9px; font-weight:bold; color:#4f4;">CATE: ${mod.cate}</span>
+                                </div>
+                                <div style="font-size:9px; opacity:0.6; margin:4px 0;">Role: ${mod.role}</div>
+                                <button class="btn btn-ghost" style="width:100%; padding:4px; font-size:9px; margin-top:5px; border-color:var(--accent);" 
+                                        onclick="incorporateLegacyComponent('${mod.name}', '${mod.path}')">Incorporate to v3</button>
+                            </div>
+                        `).join("")}
+                    </div>
+                </div>
+                <div style="opacity:0.9;">
+                    <h4 style="font-size:11px; margin-bottom:10px; opacity:0.7;">Vault Inventory</h4>
+                    ${data.inventory.map(item => `
+                        <div style="background:rgba(255,255,255,0.02); padding:6px; border-radius:4px; margin-bottom:5px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span style="font-weight:bold; font-size:10px; color:var(--accent);">${item.category}</span>
+                                <span style="font-size:9px; opacity:0.6;">${item.count} items</span>
+                            </div>
+                        </div>
+                    `).join("")}
+                </div>
+            `;
+            listEl.innerHTML = html;
+            if (visionEl) visionEl.innerText = data.vision_map_summary || "No vision map data.";
+        } else {
+            listEl.innerHTML = `<p style="color:#f44">Vault not active or not found.</p>`;
+        }
+    } catch (err) {
+        console.error("Error fetching vault status:", err);
+        if (listEl) listEl.innerHTML = `<p style="color:#f44">Error connecting to vault master.</p>`;
+    }
+}
+
+async function incorporateLegacyComponent(name, path) {
+    if (!confirm(`¿Deseas iniciar el reciclaje programado de "${name}"? Se enviará a Lila para evaluación de ADAPTER.`)) return;
+    try {
+        const response = await fetch('/api/lila/chat', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ message: `Inicia reciclaje de componente legacy: ${name} en ${path}. Necesito un ADAPTER v3.` })
+        });
+        const data = await response.json();
+        alert(`Lila ha recibido la misión: ${data.response.substring(0, 50)}...`);
+        toggleLilaVault(); // Cerrar
+    } catch (err) {
+        alert("Error en solicitud: " + err.message);
+    }
+}
+
 // ── LIBRARY ────────────────────────────────────────────
 async function fetchLibraryStatus() {
     try {

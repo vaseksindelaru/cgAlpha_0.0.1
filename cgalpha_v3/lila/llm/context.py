@@ -22,13 +22,14 @@ class ContextBuilder:
         
         # Archivos clave para contexto general (Sección A/C/D)
         self.priority_files = [
-            "UNIFIED_CONSTITUTION_v0.0.3.md",
-            "docs/CGALPHA_MASTER_DOCUMENTATION.md",
-            "docs/CGALPHA_SYSTEM_GUIDE.md",
+            "LILA_v3_NORTH_STAR.md",
             "cgalpha_v3/domain/models/signal.py",
-            "cgalpha_v3/learning/memory_policy.py",
+            "cgalpha_v3/application/change_proposer.py",
+            "legacy_vault/v1/cgalpha/nexus/coordinator.py",
+            "legacy_vault/v1/cgalpha/labs/risk_barrier_lab.py",
             "README.md"
         ]
+        self.vault_dir = self.root_dir / "legacy_vault"
 
     def build_technical_context(self, 
                                  query: str, 

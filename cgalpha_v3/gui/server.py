@@ -1583,6 +1583,57 @@ def assistant_chat() -> ResponseReturnValue:
         return jsonify({"response": f"Hubo un error en mi núcleo de procesamiento v3: {exc}"})
 
 # ---------------------------------------------------------------------------
+# Heritage Vault (Sección 7 - Mosaic Bridge)
+# ---------------------------------------------------------------------------
+
+@app.route("/api/vault/status", methods=["GET"])
+@require_auth
+def vault_status():
+    """
+    Reporta el estado e inventario de la Bóveda de Herencia (v1/v2).
+    """
+    vault_path = Path("legacy_vault")
+    if not vault_path.exists():
+        return jsonify({"status": "missing", "components": []})
+        
+    inventory = []
+    
+    # Escanear v1/v2/infra/cli
+    subdirs = ["v1", "v2", "infrastructure", "cli", "documentation"]
+    for sd in subdirs:
+        p = vault_path / sd
+        if p.exists():
+            # Contar archivos relevantes (.py, .md)
+            files = list(p.rglob("*.*"))
+            inventory.append({
+                "category": sd.upper(),
+                "count": len(files),
+                "path": str(p),
+                "ready_for_recycling": True
+            })
+
+    # MODULOS DE ELITE (Reciclaje sugerido)
+    elite_modules = [
+        {"name": "Nexus Coordinator", "path": "legacy_vault/v1/cgalpha/nexus/coordinator.py", "role": "Orchestrator v1", "cate": 0.85},
+        {"name": "Risk Barrier (DML)", "path": "legacy_vault/v1/cgalpha/labs/risk_barrier_lab.py", "role": "Causal Auditor", "cate": 0.92},
+        {"name": "Knowledge Base agent", "path": "legacy_vault/v2/cgalpha_v2/knowledge_base/", "role": "Contextual Memory", "cate": 0.78},
+        {"name": "Task Buffer (Redis)", "path": "legacy_vault/v1/cgalpha/nexus/task_buffer.py", "role": "System Resilience", "cate": 0.80},
+        {"name": "Oracle Base v2", "path": "legacy_vault/infrastructure/oracle/", "role": "Predictor Baseline", "cate": 0.83}
+    ]
+            
+    # Leer el Vision Map
+    vision_map = Path("legacy_vision_map.md")
+    vision_content = vision_map.read_text(encoding="utf-8") if vision_map.exists() else ""
+            
+    return jsonify({
+        "status": "active",
+        "blueprint_version": "2.0.0",
+        "inventory": inventory,
+        "elite_modules": elite_modules,
+        "vision_map_summary": vision_content[:800] + "..." if len(vision_content) > 800 else vision_content
+    })
+
+# ---------------------------------------------------------------------------
 # Arranque
 # ---------------------------------------------------------------------------
 

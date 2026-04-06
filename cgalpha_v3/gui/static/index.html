@@ -1519,6 +1519,12 @@
                             d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89l.07.14L9 12H6a7 7 0 1 1 7 7a7 7 0 0 1-5.12-2.13l-1.42 1.42A8.98 8.98 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54l.72-1.21l-3.5-2.08V8H12z" />
                     </svg>
                 </button>
+                <button title="Heritage Vault" onclick="toggleLilaVault()">
+                    <svg viewBox="0 0 24 24" width="14" height="14">
+                        <path fill="currentColor"
+                            d="M18 19H6v-2h12v2zm0-4H6v-2h12v2zm0-4H6V9h12v2zm-2-6H8v2h8V5zM4 21h16V3H4v18z" />
+                    </svg>
+                </button>
                 <button id="lila-fs-btn" title="Fullscreen" onclick="toggleLilaFullScreen()">
                     <svg viewBox="0 0 24 24" width="14" height="14">
                         <path fill="currentColor"
@@ -1553,18 +1559,36 @@
                         <div id="memory-levels-grid"
                             style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 0.85em; text-align: center;">
                             <div style="background:rgba(255,255,255,0.05); padding:5px; border-radius:4px;">0a
-                                <br><strong id="mem-0a" style="color:var(--accent)">0</strong></div>
+                                <br><strong id="mem-0a" style="color:var(--accent)">0</strong>
+                            </div>
                             <div style="background:rgba(255,255,255,0.05); padding:5px; border-radius:4px;">0b
-                                <br><strong id="mem-0b" style="color:var(--accent)">0</strong></div>
+                                <br><strong id="mem-0b" style="color:var(--accent)">0</strong>
+                            </div>
                             <div style="background:rgba(255,255,255,0.05); padding:5px; border-radius:4px;">1
-                                <br><strong id="mem-1" style="color:var(--accent)">0</strong></div>
+                                <br><strong id="mem-1" style="color:var(--accent)">0</strong>
+                            </div>
                             <div style="background:rgba(255,255,255,0.05); padding:5px; border-radius:4px;">2
-                                <br><strong id="mem-2" style="color:var(--accent)">0</strong></div>
+                                <br><strong id="mem-2" style="color:var(--accent)">0</strong>
+                            </div>
                             <div style="background:rgba(255,255,255,0.05); padding:5px; border-radius:4px;">3
-                                <br><strong id="mem-3" style="color:var(--accent)">0</strong></div>
+                                <br><strong id="mem-3" style="color:var(--accent)">0</strong>
+                            </div>
                             <div style="background:rgba(255,255,255,0.05); padding:5px; border-radius:4px;">4
-                                <br><strong id="mem-4" style="color:var(--accent)">0</strong></div>
+                                <br><strong id="mem-4" style="color:var(--accent)">0</strong>
+                            </div>
                         </div>
+                    </div>
+                </div>
+            </div>
+            <div id="lila-vault-overlay" class="hidden">
+                <div class="history-header">Heritage Vault (Mosaic Mode)</div>
+                <div id="lila-vault-content"
+                    style="padding:15px; font-size:12px; height: calc(100% - 40px); overflow-y: auto;">
+                    <div id="vault-inventory-list" style="display: flex; flex-direction: column; gap: 10px;">
+                        <p style="opacity: 0.6;">Loading legacy inventory...</p>
+                    </div>
+                    <div id="vision-map-preview"
+                        style="margin-top: 20px; border-top: 1px solid #444; padding-top: 10px; font-family: monospace; white-space: pre-wrap; font-size: 10px; opacity: 0.8;">
                     </div>
                 </div>
             </div>
@@ -1738,18 +1762,21 @@
             box-shadow: 0 0 15px rgba(0, 212, 170, 0.4);
         }
 
-        /* HISTORY OVERLAY */
-        #lila-history-overlay {
+        /* OVERLAYS (History, Settings, Vault) */
+        #lila-history-overlay,
+        #lila-settings-overlay,
+        #lila-vault-overlay {
             position: absolute;
             top: 0;
             left: 0;
             right: 0;
             bottom: 0;
             background: #1a1a2e;
-            z-index: 10;
+            z-index: 100;
             padding: 16px;
             display: flex;
             flex-direction: column;
+            border-radius: 0 0 16px 16px;
         }
 
         .history-header {

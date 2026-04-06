@@ -256,3 +256,46 @@ class RiskManager:
             "max_signals_per_hour":      self.params.max_signals_per_hour,
             "incidents_count":           len(self._incidents),
         }
+
+    # ── RECICLAJE LEGACY: CAUSAL AUDITOR (v1/RiskBarrierLab) ──
+    def run_causal_audit(self, bridge_path: str) -> list[dict]:
+        """
+        Lógica reciclada de legacy_vault/v1/cgalpha/labs/risk_barrier_lab.py.
+        Analiza el bridge.jsonl para encontrar ineficiencias causales.
+        """
+        from pathlib import Path
+        import pandas as pd
+        import json
+        
+        p = Path(bridge_path)
+        if not p.exists():
+            return []
+            
+        data = []
+        with open(p, 'r') as f:
+            for line in f:
+                try:
+                    evt = json.loads(line)
+                    if 'outcome' in evt:
+                        data.append({
+                            'label': evt['outcome'].get('label_ordinal', 0),
+                            'mfe': evt['outcome'].get('mfe_atr', 0),
+                            'mae': evt['outcome'].get('mae_atr', 0),
+                            'regime': evt.get('causal_tags', ['UNKNOWN'])[0]
+                        })
+                except: continue
+        
+        if not data: return []
+        df = pd.DataFrame(data)
+        
+        findings = []
+        for regime, group in df.groupby('regime'):
+            win_rate = len(group[group['label'] > 0]) / len(group)
+            if win_rate < 0.40:
+                findings.append({
+                    "type": "risk_alert",
+                    "regime": regime,
+                    "insight": f"Win Rate crítico ({win_rate:.1%}) detectado por auditoría causal.",
+                    "action": "Increase confidence_threshold"
+                })
+        return findings
