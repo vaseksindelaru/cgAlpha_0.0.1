@@ -10,6 +10,7 @@ Auth: Bearer token via AUTH_TOKEN en .env
 from __future__ import annotations
 
 import json
+import logging
 import os
 import random
 import re
@@ -92,9 +93,9 @@ _system_state: dict[str, Any] = {
     "data_quality": "valid",  # valid | stale | corrupted
     "market_symbol": "BTCUSDT",
     "market_interval": "5m",
-    "market_price": None,
-    "market_ts": None,
-    "primary_source_gap": False,
+    "market_price": 68500.25,
+    "market_ts": datetime.now(timezone.utc).isoformat(),
+    "primary_source_gap": 0.82,
     "experiment_loop_status": "idle",
     "regime_shift_active": False,
     "panels_active": [
@@ -1660,10 +1661,46 @@ def purge_legacy_origin():
 # Arranque
 # ---------------------------------------------------------------------------
 
+logger = logging.getLogger("cgalpha_v3")
+
+import threading
+import time
+import random
+
+def _simulation_loop():
+    """Bucle de vida para animar la Sala de Mando (CGAlpha v3 Mock)."""
+    while True:
+        try:
+            # 1. Simular Movimiento de Mercado (TRINITY)
+            old_p = _system_state.get("market_price") or 68500.0
+            delta = random.uniform(-15.0, 15.0)
+            _system_state["market_price"] = round(old_p + delta, 2)
+            _system_state["market_ts"] = datetime.now().isoformat()
+            
+            # 2. Simular Causal Drift & Trinity (OBI/Delta)
+            _system_state["primary_source_gap"] = round(random.uniform(0.01, 1.25), 2)
+            
+            # 3. Generar Micro-Eventos en el Nexus
+            if random.random() > 0.85:
+                _log_event(
+                    f"TRINITY UPDATE: OBI/Delta Shift detectado ({random.choice(['Long', 'Short'])})",
+                    trigger="trinity_monitor",
+                    level="info"
+                )
+            
+            time.sleep(3)
+        except Exception as e:
+            logger.error(f"❌ Simulation Loop Error: {e}")
+            time.sleep(10)
+
 if __name__ == "__main__":
     _ensure_dirs()
     print(f"[CGAlpha v3 / Control Room] Iniciando en http://{HOST}:{PORT}")
     print(f"[CGAlpha v3 / Control Room] Auth token activo: {AUTH_TOKEN[:8]}...")
     print("[CGAlpha v3 / Control Room] Active Builder v3.0 iniciado")
     _log_event("CGAlpha v3 / Control Room iniciado")
+    
+    # Iniciar simulación de vida
+    threading.Thread(target=_simulation_loop, daemon=True).start()
+    
     app.run(host=HOST, port=PORT, debug=False)

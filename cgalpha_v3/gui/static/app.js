@@ -1169,6 +1169,35 @@ openai >= 1.0.0  # si OPENAI_API_KEY configurado
     },
     {
         cat: 'inicio',
+        title: '🏗️ Guía: Construir una Estrategia v3',
+        icon: '🏗️',
+        content: `
+        <p>Proceso de 4 pasos para construir, validar y promocionar una estrategia en CGAlpha v3 usando el Control Room:</p>
+        <div style="margin-top:10px; display:flex; flex-direction:column; gap:12px; font-size:12px;">
+            <div style="background:var(--bg3); padding:10px; border-radius:8px; border-left:4px solid var(--accent2);">
+                <strong style="color:var(--accent2);">Paso 1: Fundamento Teórico (Library & Theory)</strong>
+                <p style="margin-top:4px; opacity:0.8;">Busca en la <strong>Library</strong> artículos científicos que respalden tu idea. Si no existen, utiliza el formulario de <strong>Ingesta</strong>. Valida tu hipótesis en <strong>Theory Live</strong> para asegurar que no hay "primary_source_gap".</p>
+            </div>
+            <div style="background:var(--bg3); padding:10px; border-radius:8px; border-left:4px solid var(--purple);">
+                <strong style="color:var(--purple);">Paso 2: Ciclo de Experimento (The Loop)</strong>
+                <p style="margin-top:4px; opacity:0.8;">Crea una <strong>Proposal</strong> en la pestaña <em>Experiment Loop</em> definiendo la hipótesis y los <em>Approach Types</em> (RETEST, BREAKOUT, etc.). Haz clic en <strong>Run Experiment</strong> para ejecutar la validación Walk-Forward (mínimo 3 ventanas) con protección anti-leakage.</p>
+            </div>
+            <div style="background:var(--bg3); padding:10px; border-radius:8px; border-left:4px solid var(--accent);">
+                <strong style="color:var(--accent);">Paso 3: Análisis y Promoción (Learning)</strong>
+                <p style="margin-top:4px; opacity:0.8;">Si el Sharpe Ratio es > 1.5, ve a la pestaña <strong>Learning</strong>. Promueve la entrada de memoria resultante al <strong>Nivel 4 (STRATEGY)</strong>. Esto requiere aprobación humana y es lo que "solidifica" la estrategia en el ADN del sistema.</p>
+            </div>
+            <div style="background:var(--bg3); padding:10px; border-radius:8px; border-left:4px solid var(--yellow);">
+                <strong style="color:var(--yellow);">Paso 4: Auditoría Viva (Lila Assistant)</strong>
+                <p style="margin-top:4px; opacity:0.8;">Usa los iconos de <strong>Active Strategy</strong> y <strong>Heritage Vault</strong> en el chat de Lila para monitorear el pipeline síncrono (7 componentes) y verificar la persistencia de los componentes purificados.</p>
+            </div>
+        </div>
+        <div style="margin-top:10px; padding:8px; background:rgba(0,212,170,0.05); border-radius:6px; font-size:11px;">
+            <strong>Ejemplo:</strong> La <em>Simple Foundation Strategy</em> usa absorción de velas en VWAP, validada por el Oracle (>0.70 confidence) y auditada por el Nexus Gate.
+        </div>
+        `
+    },
+    {
+        cat: 'inicio',
         title: '🔍 Verificación con curl / httpie',
         icon: '🔍',
         content: `

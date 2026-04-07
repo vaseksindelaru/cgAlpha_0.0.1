@@ -38,6 +38,10 @@ class SimpleFoundationPipeline:
         # 1. COSECHA (BinanceVisionFetcher_v3)
         records: List[MicrostructureRecord] = self.fetcher.evaluate(symbol, start_time, end_time)
         
+        if not records:
+            logger.warning(f"⚠️ No hay registros de microestructura para {symbol}. Ciclo abortado.")
+            return "NO_DATA_AVAILABLE"
+
         # 2. DETECCIÓN (AbsorptionCandleDetector_v3)
         signals: List[SignalSignal] = self.detector.evaluate(records)
         
