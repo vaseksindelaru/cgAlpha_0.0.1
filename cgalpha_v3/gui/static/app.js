@@ -19,6 +19,7 @@ let libraryItems = [];
 let selectedLibrarySourceId = null;
 let theorySnapshot = null;
 let experimentSnapshot = null;
+let knownProposalIds = new Set();
 
 // ── LOGIN ─────────────────────────────────────────────
 function doLogin() {
@@ -73,6 +74,7 @@ function startPolling() {
     fetchAdaptiveBacklog();
     fetchExperimentStatus();
     fetchLearningMemoryStatus();
+    fetchAutoProposals();
     pollTimer = setInterval(() => {
         fetchStatus();
         fetchEvents();
@@ -83,6 +85,7 @@ function startPolling() {
         fetchAdaptiveBacklog();
         fetchExperimentStatus();
         fetchLearningMemoryStatus();
+        fetchAutoProposals();
         renderFooterTs();
     }, POLL_MS);
 }
@@ -108,6 +111,98 @@ async function fetchEvents() {
         const events = await apiFetch(`/api/events?limit=${EVENTS_N}`);
         renderEvents(events);
     } catch { /* silencioso */ }
+}
+
+async function fetchAutoProposals() {
+    try {
+        const props = await apiFetch("/api/experiment/proposals");
+        updateProposalsWidget(props);
+        checkNewProposalsForLila(props);
+    } catch (e) {
+        console.warn("Error fetching proposals:", e);
+    }
+}
+
+function updateProposalsWidget(props) {
+    const container = document.getElementById("prop-list");
+    const countEl = document.getElementById("prop-count");
+    const badge = document.getElementById("exp-badge");
+
+    if (!container) return;
+
+    const pending = props.filter(p => p.status === "pending");
+    countEl.textContent = `${pending.length} pendientes`;
+
+    if (pending.length > 0) {
+        badge.textContent = pending.length;
+        badge.style.display = "inline-block";
+    } else {
+        badge.style.display = "none";
+    }
+
+    if (props.length === 0) {
+        container.innerHTML = `
+            <div class="placeholder">
+                <span class="ph-icon">🤖</span>
+                Analizando historial para detectar oportunidades de mejora...
+            </div>`;
+        return;
+    }
+
+    container.innerHTML = props.map(p => `
+        <div class="prop-card" id="prop-${p.id}" style="${p.status !== 'pending' ? 'opacity:0.5; pointer-events:none;' : ''}">
+            <div class="prop-header">
+                <span class="prop-label">${p.component}</span>
+                <span class="prop-delta">+${(p.estimated_delta * 100).toFixed(1)}% Δ</span>
+            </div>
+            <div class="prop-body">
+                <strong>Cambio:</strong> ${p.change}<br>
+                <em>${p.reason}</em>
+            </div>
+            <div class="prop-footer">
+                <button class="btn btn-sm" onclick="evaluateProposal('${p.id}')">Evaluar</button>
+                <button class="btn btn-sm btn-ghost" onclick="ignoreProposal('${p.id}')">Ignorar</button>
+            </div>
+        </div>
+    `).join("");
+}
+
+function checkNewProposalsForLila(props) {
+    const pending = props.filter(p => p.status === "pending");
+    pending.forEach(p => {
+        if (!knownProposalIds.has(p.id)) {
+            knownProposalIds.add(p.id);
+            // Publicar evento para Lila (Lila escucha eventos del sistema)
+            const ev = new CustomEvent("lila:insight", {
+                detail: {
+                    text: `He detectado una oportunidad de mejora en **${p.component}**. Estimación de impacto: **+${(p.estimated_delta * 100).toFixed(1)}%**. ¿Deseas evaluarla en el Experiment Loop?`,
+                    source: "autoproposer",
+                    proposalId: p.id
+                }
+            });
+            window.dispatchEvent(ev);
+        }
+    });
+}
+
+function evaluateProposal(id) {
+    // Para FASE 0, cargamos la hipótesis en el form
+    // En una extensión real, buscaríamos la recomendación en el array global
+    document.getElementById("exp-hypothesis").value = `Evaluación AutoProposer ${id}: Optimización de parámetros`;
+    document.getElementById("exp-approaches").value = "ABSORPTION, VWAP";
+
+    showSection('experiment');
+    document.getElementById("exp-hypothesis").scrollIntoView({ behavior: 'smooth' });
+}
+
+function ignoreProposal(id) {
+    // Silencioso en FASE 0 (solo ocultar o marcar localmente)
+    const card = document.getElementById(`prop-${id}`);
+    if (card) {
+        card.style.opacity = "0.3";
+        card.style.transform = "scale(0.95)";
+        card.style.pointerEvents = "none";
+    }
 }
 
 // ── MISSION CONTROL ────────────────────────────────────

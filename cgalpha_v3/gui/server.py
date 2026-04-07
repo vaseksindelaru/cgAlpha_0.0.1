@@ -25,8 +25,8 @@ from flask import Flask, jsonify, request, send_from_directory
 from flask.typing import ResponseReturnValue
 from dotenv import load_dotenv
 
-# Cargar variables de entorno desde .env (en raíz de v3)
-v3_env_path = Path(__file__).parent.parent / ".env"
+# Cargar variables de entorno desde .env (en raíz del proyecto)
+v3_env_path = Path(__file__).parent.parent.parent / ".env"
 load_dotenv(dotenv_path=v3_env_path)
 
 # ---------------------------------------------------------------------------
@@ -73,6 +73,7 @@ _assistant = LLMAssistant() # Migrado a v3
 _latest_proposal: Proposal | None = None
 _latest_experiment: ExperimentResult | None = None
 _experiment_history: list[ExperimentResult] = []
+_auto_proposals: list[dict[str, Any]] = []
 _incident_registry: list[dict[str, Any]] = []
 _adr_registry: list[dict[str, Any]] = []
 
@@ -975,6 +976,13 @@ def experiment_status() -> ResponseReturnValue:
     return jsonify(_experiment_loop_snapshot_json())
 
 
+@app.route("/api/experiment/proposals", methods=["GET"])
+@require_auth
+def get_auto_proposals() -> ResponseReturnValue:
+    """Obtener recomendaciones automáticas del AutoProposer."""
+    return jsonify(_auto_proposals)
+
+
 @app.route("/api/experiment/propose", methods=["POST"])
 @require_auth
 def experiment_propose() -> ResponseReturnValue:
@@ -1684,7 +1692,25 @@ def _simulation_loop():
             if random.random() > 0.85:
                 _log_event(
                     f"TRINITY UPDATE: OBI/Delta Shift detectado ({random.choice(['Long', 'Short'])})",
-                    trigger="trinity_monitor",
+                    level="info"
+                )
+
+            # 4. Simular Recomendaciones del AutoProposer (NUEVO)
+            if random.random() > 0.92:
+                prop_id = str(uuid.uuid4())[:8]
+                new_prop = {
+                    "id": prop_id,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "component": "AbsorptionCandleDetector_v3",
+                    "change": "volume_percentile: 0.80 -> 0.85",
+                    "reason": "Reducción de falsos positivos en régimen de baja volatilidad detectado.",
+                    "estimated_delta": round(random.uniform(0.01, 0.08), 3),
+                    "confidence": 0.82,
+                    "status": "pending"
+                }
+                _auto_proposals.append(new_prop)
+                _log_event(
+                    f"AUTOPROPOSER: Nueva recomendación de mejora ({prop_id})",
                     level="info"
                 )
             
