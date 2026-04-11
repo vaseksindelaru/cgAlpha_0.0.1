@@ -171,21 +171,21 @@ class AccumulationZoneDetector:
                 self.data[col] = pd.to_numeric(self.data[col], errors='coerce')
 
     def _calculate_atr(self, index: int) -> float:
-        """Calcula ATR en el índice dado."""
+        """Calcula ATR en el índice dado (optimizado con numpy)."""
         period = self.config['atr_period']
         if index < period:
             return self.data['close'].iloc[index] * 0.01
 
-        high = self.data['high'].iloc[index - period:index]
-        low = self.data['low'].iloc[index - period:index]
+        high = self.data['high'].values[index - period:index]
+        low = self.data['low'].values[index - period:index]
+        close = self.data['close'].values[index - period:index]
+        close_prev = np.roll(close, 1)
+        close_prev[0] = close[0]
         tr = np.maximum(
             high - low,
-            np.maximum(
-                np.abs(high - self.data['close'].iloc[index - period:index].shift(1)),
-                np.abs(low - self.data['close'].iloc[index - period:index].shift(1))
-            )
+            np.maximum(np.abs(high - close_prev), np.abs(low - close_prev))
         )
-        return tr.mean()
+        return float(np.mean(tr))
 
     def _quality_score(self, start: int, end: int, range_width: float,
                        avg_vol: float, vwap: float, mfi: float) -> float:
@@ -198,7 +198,7 @@ class AccumulationZoneDetector:
                 atr = self.data['close'].iloc[end] * 0.01
 
             vol_pct = np.percentile(
-                self.data['volume'].iloc[max(0, start - 150):end], 65
+                self.data['volume'].values[max(0, start - 150):end], 65
             )
 
             # Criterio 1: rango estrecho
@@ -226,11 +226,12 @@ class AccumulationZoneDetector:
 
     def _vwap(self, start: int, end: int) -> float:
         """Calcula VWAP del segmento."""
-        tp = (self.data['high'].iloc[start:end] +
-              self.data['low'].iloc[start:end] +
-              self.data['close'].iloc[start:end]) / 3
-        vol = self.data['volume'].iloc[start:end]
-        return (tp * vol).sum() / vol.sum()
+        tp = (self.data['high'].values[start:end] +
+              self.data['low'].values[start:end] +
+              self.data['close'].values[start:end]) / 3
+        vol = self.data['volume'].values[start:end]
+        total_vol = vol.sum()
+        return float((tp * vol).sum() / total_vol) if total_vol > 0 else float(self.data['close'].iloc[start])
 
     def detect(self, candle_index: int) -> Optional[Dict]:
         """
@@ -239,38 +240,41 @@ class AccumulationZoneDetector:
         if self.data is None or candle_index < self.config['min_zone_bars']:
             return None
 
-        lookback = min(candle_index, 50)
+        lookback = min(candle_index, 30)  # Reducido de 50 para performance
         start_idx = max(0, candle_index - lookback)
 
         best_zone = None
         best_quality = 0
         min_window = max(self.config['min_zone_bars'], 2)
 
-        for win in range(min_window, min(lookback, 15) + 1):
+        # Pre-compute candle data una sola vez
+        c_high = self.data['high'].iloc[candle_index]
+        c_low = self.data['low'].iloc[candle_index]
+        c_close = self.data['close'].iloc[candle_index]
+        price_2pct = c_close * 0.02
+        global_avg = self.data['volume'].values[max(0, start_idx - 50):candle_index].mean()
+
+        for win in range(min_window, min(lookback, 12) + 1):
             for ws in range(start_idx, candle_index - win + 1):
                 we = ws + win
-                high_max = self.data['high'].iloc[ws:we].max()
-                low_min = self.data['low'].iloc[ws:we].min()
+                high_max = self.data['high'].values[ws:we].max()
+                low_min = self.data['low'].values[ws:we].min()
                 rng = high_max - low_min
 
                 atr = self._calculate_atr(we)
                 if atr == 0:
-                    atr = self.data['close'].iloc[candle_index] * 0.01
+                    atr = c_close * 0.01
 
                 # Filtro 1: rango estrecho
                 if rng > self.config['atr_multiplier'] * atr * 1.5:
                     continue
 
                 # Filtro 2: volumen suficiente
-                avg_vol = self.data['volume'].iloc[ws:we].mean()
-                global_avg = self.data['volume'].iloc[max(0, start_idx - 50):candle_index].mean()
+                avg_vol = self.data['volume'].values[ws:we].mean()
                 if avg_vol < max(0.5, self.config['volume_threshold']) * global_avg * 0.7:
                     continue
 
                 # Filtro 3: zona toca la vela clave
-                c_high = self.data['high'].iloc[candle_index]
-                c_low = self.data['low'].iloc[candle_index]
-                price_2pct = self.data['close'].iloc[candle_index] * 0.02
                 touches = (
                     (low_min <= c_high + price_2pct and high_max >= c_low - price_2pct) or
                     (abs(high_max - c_low) <= price_2pct) or
@@ -281,11 +285,11 @@ class AccumulationZoneDetector:
 
                 # Calcular métricas
                 vwap = self._vwap(ws, we)
-                mfi = 50  # Simplificado (requiere pandas_ta)
+                mfi = 50  # Simplificado
                 quality = self._quality_score(ws, we, rng, avg_vol, vwap, mfi)
 
                 # Bonus de recencia
-                quality += 0.2 * (1 - (candle_index - we) / lookback)
+                quality += 0.2 * (1 - (candle_index - we) / lookback) if lookback > 0 else 0
 
                 if quality > best_quality and quality >= self.config['quality_threshold'] * 0.8:
                     best_quality = quality
@@ -529,6 +533,7 @@ class TripleCoincidenceDetector:
             'min_zone_bars': 5,
             'quality_threshold': 0.45,
             'r2_min': 0.45,
+            'min_trend_length': 5,
             'proximity_tolerance': 8,
             'retest_timeout_bars': 50,  # Máximo velas para esperar retest
             'outcome_lookahead_bars': 10,  # Velas para determinar outcome
@@ -546,9 +551,14 @@ class TripleCoincidenceDetector:
         """
         Detecta señales de Triple Coincidence (método legacy para compatibilidad).
         """
-        key_candles = self.key_candle_detector.detect(df)
-        zones = self.zone_detector.detect(df)
-        trends = self.trend_detector.detect(df)
+        # Cargar datos en sub-detectores
+        self.key_candle_detector.load_data(df)
+        self.zone_detector.load_data(df)
+        self.trend_detector.load_data(df)
+
+        key_candles = self.key_candle_detector.detect_all()
+        zones = self.zone_detector.detect_all([kc['index'] for kc in key_candles])
+        trends = self.trend_detector.detect_all()
 
         coincidences = self._find_coincidences(key_candles, zones, trends, df)
         signals = self._score_signals(coincidences)
@@ -591,9 +601,9 @@ class TripleCoincidenceDetector:
                 continue
 
             # Verificar umbrales mínimos
-            if matching_zone['quality_score'] < self.config['quality_threshold']:
+            if matching_zone.get('quality_score', 0) < self.config['quality_threshold']:
                 continue
-            if matching_trend['r2'] < self.config['r2_min']:
+            if matching_trend.get('r2', 0) < self.config['r2_min']:
                 continue
 
             coincidences.append({
@@ -616,12 +626,12 @@ class TripleCoincidenceDetector:
             trend = coinc['mini_trend']
 
             scoring = score_triple_signal(
-                quality_score=zone['quality_score'],
-                r2=trend['r2'],
-                slope=trend['slope_normalized'],
-                direction=trend['direction'],
-                candle_volume=candle['volume_percentile'],
-                body_pct=candle['body_percentage']
+                quality_score=zone.get('quality_score', 0.5),
+                r2=trend.get('r2', 0),
+                slope=trend.get('slope_normalized', 0),
+                direction=trend.get('direction', 'bullish'),
+                candle_volume=candle.get('volume_percentile', 0),
+                body_pct=candle.get('body_percentage', 30)
             )
 
             signals.append(TripleSignal(
@@ -653,11 +663,19 @@ class TripleCoincidenceDetector:
         Returns:
             Lista de RetestEvent detectados
         """
+        # Pre-cargar datos en sub-detectores
+        self.key_candle_detector.load_data(df)
+        self.zone_detector.load_data(df)
+        self.trend_detector.load_data(df)
+
+        # Pre-calcular tendencias (no cambian por iteración)
+        all_trends = self.trend_detector.detect_all()
+
         retest_events = []
 
-        for idx, row in df.iterrows():
+        for idx in range(len(df)):
             # 1. Detectar nuevas zonas
-            new_zones = self._detect_new_zones(df, idx)
+            new_zones = self._detect_new_zones(df, idx, all_trends)
             self.active_zones.extend(new_zones)
 
             # 2. Monitorear retests de zonas activas
@@ -697,38 +715,46 @@ class TripleCoincidenceDetector:
 
         return retest_events
 
-    def _detect_new_zones(self, df: pd.DataFrame, current_idx: int) -> List[ActiveZone]:
-        """Detecta nuevas zonas de Triple Coincidence."""
+    def _detect_new_zones(self, df: pd.DataFrame, current_idx: int,
+                          precomputed_trends: List[Dict] = None) -> List[ActiveZone]:
+        """Detecta nuevas zonas de Triple Coincidence en el índice actual."""
         if current_idx < self.config['lookback_candles']:
             return []
 
-        # Usar lógica existente de detección
-        key_candles = self.key_candle_detector.detect(df)
-        zones = self.zone_detector.detect(df)
-        trends = self.trend_detector.detect(df)
+        # Detectar vela clave en índice actual
+        key_candle = self.key_candle_detector.detect(current_idx)
+        if key_candle is None:
+            return []
 
-        coincidences = self._find_coincidences(key_candles, zones, trends, df)
+        # Buscar zona de acumulación asociada
+        zone = self.zone_detector.detect(current_idx)
+        if zone is None:
+            return []
+
+        # Usar tendencias pre-calculadas o calcular
+        trends = precomputed_trends if precomputed_trends is not None else self.trend_detector.detect_all()
+
+        # Buscar coincidencias
+        coincidences = self._find_coincidences([key_candle], [zone], trends, df)
 
         new_zones = []
         for coinc in coincidences:
             candle = coinc['key_candle']
-            zone = coinc['accumulation_zone']
+            zone_data = coinc['accumulation_zone']
             trend = coinc['mini_trend']
 
-            # Solo crear zona si la vela clave es reciente
-            if candle['index'] == current_idx:
-                active_zone = ActiveZone(
-                    candle_index=candle['index'],
-                    zone_top=zone['zone_top'],
-                    zone_bottom=zone['zone_bottom'],
-                    vwap_at_detection=zone.get('vwap', candle['close']),
-                    detection_timestamp=int(df.iloc[current_idx].get('close_time', candle['index'] * 300000)),
-                    direction=trend['direction'],
-                    key_candle=candle,
-                    accumulation_zone=zone,
-                    mini_trend=trend,
-                )
-                new_zones.append(active_zone)
+            active_zone = ActiveZone(
+                candle_index=candle['index'],
+                zone_top=zone_data.get('high', zone_data.get('zone_top', candle['high'])),
+                zone_bottom=zone_data.get('low', zone_data.get('zone_bottom', candle['low'])),
+                vwap_at_detection=zone_data.get('vwap', candle['close']),
+                detection_timestamp=int(df.iloc[current_idx].get('close_time', candle['index'] * 300000)),
+                direction=trend['direction'],
+                key_candle=candle,
+                accumulation_zone=zone_data,
+                mini_trend=trend,
+            )
+            new_zones.append(active_zone)
 
         return new_zones
 
