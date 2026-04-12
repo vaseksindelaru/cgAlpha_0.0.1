@@ -65,6 +65,7 @@ from cgalpha_v3.application.live_adapter import LiveDataFeedAdapter
 from cgalpha_v3.lila.llm.oracle import OracleTrainer_v3
 from cgalpha_v3.lila.evolution_orchestrator import EvolutionOrchestrator
 from cgalpha_v3.data_quality.nexus_gate import NexusGate
+from cgalpha_v3.risk.order_manager import DryRunOrderManager
 
 _rollback_mgr = RollbackManager(MEMORY_DIR / "snapshots")
 _lila_mgr = LibraryManager()
@@ -78,9 +79,12 @@ _history_learner = ProjectHistoryLearner(_memory_engine, BASE_DIR.parent.parent)
 _assistant = LLMAssistant() # Migrado a v3
 _ws_manager = BinanceWebSocketManager.create_default()
 
+# Dry Run Portfolio (Fase 4.1)
+_order_mgr = DryRunOrderManager(initial_balance=10000.0)
+
 # ShadowTrader Live Pipeline
 _detector = TripleCoincidenceDetector()
-_shadow_trader = LiveDataFeedAdapter.create_default(_ws_manager, _detector)
+_shadow_trader = LiveDataFeedAdapter.create_default(_ws_manager, _detector, _order_mgr)
 
 # Intentar cargar Oracle entrenado (de Phase 1)
 _oracle_v3 = OracleTrainer_v3.create_default()
@@ -889,6 +893,37 @@ def get_live_signals() -> ResponseReturnValue:
         "count": len(_shadow_trader.live_signals),
         "status": "active"
     })
+
+
+@app.route("/api/live/portfolio", methods=["GET"])
+@require_auth
+def get_live_portfolio() -> ResponseReturnValue:
+    """Retorna estado del balance y posiciones en Dry Run."""
+    return jsonify({
+        "balance": round(_order_mgr.balance, 2),
+        "initial_balance": 10000.00,
+        "active_positions": [p.__dict__ for p in _order_mgr.active_positions.values()],
+        "history_count": len(_order_mgr.history),
+        "status": "dry_run"
+    })
+
+
+@app.route("/api/debug/force_signal", methods=["POST"])
+@require_auth
+def force_signal() -> ResponseReturnValue:
+    """Inyecta una señal sintética perfecta para probar el OrderManager."""
+    price = _system_state.get("market_price", 68000.0)
+    signal = {
+        "id": f"sintetica_{int(time.time())}",
+        "symbol": "BTCUSDT",
+        "price": price,
+        "direction": "bullish",
+        "oracle_confidence": 0.89,
+        "obi": 0.45
+    }
+    pos = _order_mgr.execute_signal(signal)
+    _log_event(f"🧪 DEBUG: Señal sintética inyectada. Posición {pos.pos_id} abierta.", level="warning")
+    return jsonify({"status": "success", "position": pos.__dict__})
 
 
 @app.route("/api/status")

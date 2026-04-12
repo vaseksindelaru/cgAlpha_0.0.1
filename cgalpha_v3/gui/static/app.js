@@ -446,6 +446,24 @@ function renderLiveSignals(signals) {
     `).join("");
 }
 
+async function fetchLivePortfolio() {
+    try {
+        const d = await apiFetch("/api/live/portfolio");
+        renderPortfolio(d);
+    } catch (e) { console.warn("Portfolio error:", e); }
+}
+
+function renderPortfolio(d) {
+    const balEl = document.getElementById("portfolio-balance");
+    if (balEl) {
+        balEl.innerText = `$${d.balance.toLocaleString()}`;
+        balEl.style.color = d.balance >= d.initial_balance ? "var(--accent)" : "var(--red)";
+    }
+
+    const countEl = document.getElementById("active-positions-count");
+    if (countEl) countEl.innerText = d.active_positions.length;
+}
+
 // ── RISK PANEL ─────────────────────────────────────────
 function updateRiskPanel(d) {
     const dd = d.drawdown_session_pct ?? 0;

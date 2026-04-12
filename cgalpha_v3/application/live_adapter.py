@@ -15,6 +15,7 @@ from cgalpha_v3.domain.base_component import BaseComponentV3, ComponentManifest
 from cgalpha_v3.infrastructure.binance_websocket_manager import BinanceWebSocketManager
 from cgalpha_v3.infrastructure.signal_detector.triple_coincidence import TripleCoincidenceDetector, RetestEvent
 from cgalpha_v3.data_quality.nexus_gate import NexusGate
+from cgalpha_v3.risk.order_manager import DryRunOrderManager
 
 logger = logging.getLogger("live_adapter")
 
@@ -26,10 +27,11 @@ class LiveDataFeedAdapter(BaseComponentV3):
     ╚═══════════════════════════════════════════════════════╝
     """
 
-    def __init__(self, manifest: ComponentManifest, ws_manager: BinanceWebSocketManager, detector: TripleCoincidenceDetector):
+    def __init__(self, manifest: ComponentManifest, ws_manager: BinanceWebSocketManager, detector: TripleCoincidenceDetector, order_manager: Optional[DryRunOrderManager] = None):
         super().__init__(manifest)
         self.ws = ws_manager
         self.detector = detector
+        self.order_mgr = order_manager or DryRunOrderManager()
         self._oracle = None  # Se inyecta externamente o carga por defecto
         self.current_kline: Dict[str, Any] = {}
         self.interval_s = 60 
@@ -101,6 +103,9 @@ class LiveDataFeedAdapter(BaseComponentV3):
         self.delta_causal = self.nexus.calculate_delta_causal(self.micro_buffer)
         is_causally_safe = self.nexus.is_safe(self.delta_causal)
         
+        # 1.5 Actualizar posiciones abiertas (Dry Run)
+        self.order_mgr.update_positions(kline["close"])
+        
         logger.info(f"🕯️ Vela Live Cerrada: {self.symbol} Close={kline['close']} OBI={obi:.4f} ΔCausal={self.delta_causal:.2%}")
         
         if not is_causally_safe:
@@ -137,9 +142,15 @@ class LiveDataFeedAdapter(BaseComponentV3):
                 "direction": rt.zone.direction,
                 "oracle_confidence": confidence,
                 "prediction": prediction,
+                "obi": obi,
                 "status": "active"
             }
             self.live_signals.append(signal)
+            
+            # 3. EJECUCIÓN DRY RUN (Fase 4.1)
+            if confidence > 0.70:
+                self.order_mgr.execute_signal(signal)
+            
             logger.info(f"🚨 SENAL DETECTADA: {rt.zone.direction} | Conf: {confidence:.2f} | Pred: {prediction}")
             
             # Mantener solo las últimas 50 señales
@@ -147,7 +158,7 @@ class LiveDataFeedAdapter(BaseComponentV3):
                 self.live_signals.pop(0)
 
     @classmethod
-    def create_default(cls, ws_manager, detector):
+    def create_default(cls, ws_manager, detector, order_mgr=None):
         import time 
         manifest = ComponentManifest(name="LiveDataFeedAdapter", category="application", function="ShadowTrader Live Pipeline", inputs=["WS"], outputs=["Signals"], causal_score=0.95)
-        return cls(manifest, ws_manager, detector)
+        return cls(manifest, ws_manager, detector, order_mgr)
