@@ -648,6 +648,55 @@ class TripleCoincidenceDetector:
 
         return signals
 
+    def process_live_tick(self, new_kline: Dict, micro_data: Dict) -> List[RetestEvent]:
+        """
+        Procesa una vela cerrada en tiempo real.
+        Mantiene el historial interno (buffer) para los cálculos de indicadores.
+        """
+        # 1. Mantener buffer interno de velas (necesario para indicadores como ATR/regresión)
+        if not hasattr(self, '_kline_buffer'):
+            self._kline_buffer = []
+        
+        self._kline_buffer.append(new_kline)
+        if len(self._kline_buffer) > 200:
+            self._kline_buffer.pop(0)
+
+        if len(self._kline_buffer) < self.config['lookback_candles']:
+            return []
+
+        # Convertir buffer a DataFrame para compatibilidad con lógica interna
+        df = pd.DataFrame(self._kline_buffer)
+        current_idx = len(df) - 1
+
+        # 2. Cargar datos en sub-detectores
+        self.key_candle_detector.load_data(df)
+        self.zone_detector.load_data(df)
+        self.trend_detector.load_data(df)
+
+        retest_events = []
+
+        # 3. Detectar nuevas zonas en esta vela
+        new_zones = self._detect_new_zones(df, current_idx)
+        self.active_zones.extend(new_zones)
+
+        # 4. Monitorear retests de zonas activas
+        for zone in self.active_zones:
+            if not zone.retest_detected:
+                # Mock de micro-features para la comparación
+                # En live, micro_data viene del WS
+                mf = pd.DataFrame([micro_data]) 
+                # Ajustamos el índice para que coincida con lo esperado por _check_retest
+                retest = self._check_retest(df, current_idx, zone, mf.rename(index={0: current_idx}))
+                if retest:
+                    retest_events.append(retest)
+                    zone.retest_detected = True
+                    zone.retest_index = current_idx
+
+        # 5. Limpieza de zonas expiradas
+        self._cleanup_expired_zones(current_idx)
+
+        return retest_events
+
     def process_stream(self, df: pd.DataFrame, micro_features: Optional[pd.DataFrame] = None) -> List[RetestEvent]:
         """
         Procesa stream de datos con lógica correcta:

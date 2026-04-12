@@ -60,6 +60,9 @@ from cgalpha_v3.lila.library_manager import AdaptiveBacklogItem, LibraryManager,
 from cgalpha_v3.learning.project_history_learner import ProjectHistoryLearner
 from cgalpha_v3.risk.health_monitor import HealthMonitor
 from cgalpha_v3.infrastructure.binance_websocket_manager import BinanceWebSocketManager
+from cgalpha_v3.infrastructure.signal_detector.triple_coincidence import TripleCoincidenceDetector
+from cgalpha_v3.application.live_adapter import LiveDataFeedAdapter
+from cgalpha_v3.lila.llm.oracle import OracleTrainer_v3
 
 _rollback_mgr = RollbackManager(MEMORY_DIR / "snapshots")
 _lila_mgr = LibraryManager()
@@ -72,6 +75,15 @@ _production_gate = ProductionGate(_promotion_validator)
 _history_learner = ProjectHistoryLearner(_memory_engine, BASE_DIR.parent.parent) 
 _assistant = LLMAssistant() # Migrado a v3
 _ws_manager = BinanceWebSocketManager.create_default()
+
+# ShadowTrader Live Pipeline
+_detector = TripleCoincidenceDetector()
+_shadow_trader = LiveDataFeedAdapter.create_default(_ws_manager, _detector)
+
+# Intentar cargar Oracle entrenado (de Phase 1)
+_oracle_v3 = OracleTrainer_v3.create_default()
+# Nota: En v3.1 añadiremos carga de modelo desde disco si existe
+_shadow_trader.inject_oracle(_oracle_v3)
 
 _latest_proposal: Proposal | None = Proposal(
     proposal_id="prop-foundation-default",
@@ -857,6 +869,17 @@ def get_market_pulse() -> ResponseReturnValue:
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "status": "active" if _ws_manager.is_running else "connecting",
         "delta": round(random.uniform(-0.02, 0.02), 4) # Placeholder para Cumulative Delta
+    })
+
+
+@app.route("/api/live/signals", methods=["GET"])
+@require_auth
+def get_live_signals() -> ResponseReturnValue:
+    """Retorna las señales detectadas en la sesión live actual."""
+    return jsonify({
+        "signals": _shadow_trader.live_signals,
+        "count": len(_shadow_trader.live_signals),
+        "status": "active"
     })
 
 

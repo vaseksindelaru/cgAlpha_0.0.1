@@ -76,6 +76,7 @@ function startPolling() {
     fetchAdaptiveBacklog();
     fetchExperimentStatus();
     fetchLearningMemoryStatus();
+    fetchLiveSignals();
     fetchMarketPulse(); // Nuevo poll de alta frecuencia
     pollTimer = setInterval(() => {
         fetchStatus();
@@ -88,6 +89,7 @@ function startPolling() {
         fetchAdaptiveBacklog();
         fetchExperimentStatus();
         fetchLearningMemoryStatus();
+        fetchLiveSignals();
         renderFooterTs();
     }, POLL_MS);
 
@@ -415,6 +417,34 @@ function updateMarketLive(d) {
         badge.textContent = dq === "valid" ? "✅ LIVE" : "⚠️ SYNC";
         badge.className = "pill " + (dq === "valid" ? "pill-idle" : "pill-degraded");
     }
+}
+
+async function fetchLiveSignals() {
+    try {
+        const d = await apiFetch("/api/live/signals");
+        renderLiveSignals(d.signals);
+    } catch (e) { console.warn("Live signals error:", e); }
+}
+
+function renderLiveSignals(signals) {
+    const el = document.getElementById("live-signals-list");
+    if (!el) return;
+    if (!signals || !signals.length) {
+        el.innerHTML = '<div style="font-size:11px; color:var(--text-dim); text-align:center; padding:10px;">Esperando señales del ShadowTrader...</div>';
+        return;
+    }
+    el.innerHTML = signals.map(s => `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:8px; background:rgba(255,107,107,0.05); border-left:3px solid ${s.oracle_confidence > 0.7 ? 'var(--accent)' : 'var(--red)'}; margin-bottom:5px; border-radius:4px;">
+            <div>
+                <strong style="color:var(--accent); font-size:11px;">${s.direction}</strong>
+                <div style="font-size:10px; color:var(--text-dim);">${formatTsShort(s.timestamp)} @ $${s.price}</div>
+            </div>
+            <div style="text-align:right;">
+                <div style="font-size:11px; font-weight:bold; color:${s.oracle_confidence > 0.7 ? '#4f4' : '#f44'}">${(s.oracle_confidence * 100).toFixed(0)}%</div>
+                <div style="font-size:9px; color:var(--text-muted);">${s.prediction}</div>
+            </div>
+        </div>
+    `).join("");
 }
 
 // ── RISK PANEL ─────────────────────────────────────────
