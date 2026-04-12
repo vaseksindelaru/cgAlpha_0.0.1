@@ -137,6 +137,40 @@ class OracleTrainer_v3(BaseComponentV3):
             "class_distribution": class_distribution,
             "feature_importances": importances,
         }
+        # Inyectar firma causal basada en este dataset
+        self._causal_signature = {
+            "obi_mean": float(X["obi_10_at_retest"].mean()),
+            "obi_std": float(X["obi_10_at_retest"].std()),
+            "delta_mean": float(X["cumulative_delta_at_retest"].mean()),
+            "delta_std": float(X["cumulative_delta_at_retest"].std())
+        }
+
+    def get_causal_signature(self) -> Dict[str, float]:
+        """Retorna la firma estadística del dataset de entrenamiento (Baseline)."""
+        return getattr(self, "_causal_signature", {
+            "obi_mean": 0.05, "obi_std": 0.35,
+            "delta_mean": 0.0, "delta_std": 100.0
+        })
+
+    def save_to_disk(self, path: str):
+        """Guarda modelo y metadatos."""
+        import joblib
+        data = {
+            "model": self.model,
+            "encoders": self._encoders,
+            "metrics": self._training_metrics,
+            "causal_signature": self.get_causal_signature()
+        }
+        joblib.dump(data, path)
+
+    def load_from_disk(self, path: str):
+        """Carga modelo y metadatos."""
+        import joblib
+        data = joblib.load(path)
+        self.model = data["model"]
+        self._encoders = data["encoders"]
+        self._training_metrics = data["metrics"]
+        self._causal_signature = data["causal_signature"]
 
     def predict(self, micro: MicrostructureRecord, signal_data: Dict) -> OraclePrediction:
         """

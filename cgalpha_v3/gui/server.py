@@ -63,6 +63,8 @@ from cgalpha_v3.infrastructure.binance_websocket_manager import BinanceWebSocket
 from cgalpha_v3.infrastructure.signal_detector.triple_coincidence import TripleCoincidenceDetector
 from cgalpha_v3.application.live_adapter import LiveDataFeedAdapter
 from cgalpha_v3.lila.llm.oracle import OracleTrainer_v3
+from cgalpha_v3.lila.evolution_orchestrator import EvolutionOrchestrator
+from cgalpha_v3.data_quality.nexus_gate import NexusGate
 
 _rollback_mgr = RollbackManager(MEMORY_DIR / "snapshots")
 _lila_mgr = LibraryManager()
@@ -82,8 +84,14 @@ _shadow_trader = LiveDataFeedAdapter.create_default(_ws_manager, _detector)
 
 # Intentar cargar Oracle entrenado (de Phase 1)
 _oracle_v3 = OracleTrainer_v3.create_default()
-# Nota: En v3.1 añadiremos carga de modelo desde disco si existe
+# En v3.1 inyectamos la firma dinámicamente
 _shadow_trader.inject_oracle(_oracle_v3)
+
+# Sincronizar NexusGate con la firma causal del Oracle
+_shadow_trader.nexus = NexusGate(_oracle_v3.get_causal_signature())
+
+# Evolution Layer
+_evolution_orchestrator = EvolutionOrchestrator(_shadow_trader, _oracle_v3, _change_proposer)
 
 _latest_proposal: Proposal | None = Proposal(
     proposal_id="prop-foundation-default",
@@ -2039,6 +2047,18 @@ if __name__ == "__main__":
     # Iniciar simulación de vida
     threading.Thread(target=_simulation_loop, daemon=True).start()
     
+    # Iniciar pulso de evolución real (Capa 5)
+    def _evolution_pulse():
+        while True:
+            try:
+                _evolution_orchestrator.check_drift_and_evolve()
+                _health_monitor.update_status(_ws_manager.is_running)
+            except Exception as e:
+                logger.error(f"❌ Evolution Pulse Error: {e}")
+            time.sleep(10)
+    
+    threading.Thread(target=_evolution_pulse, daemon=True).start()
+
     # Arrancar WS Manager en segundo plano asíncrono si el servidor soporta context
     # En Flask plano, arrancamos el manager antes de run()
     import threading
