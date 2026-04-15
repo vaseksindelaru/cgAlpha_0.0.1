@@ -9,6 +9,7 @@ Auth: Bearer token via AUTH_TOKEN en .env
 
 from __future__ import annotations
 
+import sys
 import asyncio
 import json
 import logging
@@ -19,15 +20,21 @@ import time
 import uuid
 from datetime import datetime, timezone
 from functools import wraps
-from pathlib import Path
 from typing import Any
+from pathlib import Path
+
+# Fix: Añadir raíz del proyecto al sys.path para evitar ModuleNotFoundError
+# cuando se lanza el script directamente.
+project_root = Path(__file__).parent.parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
 from flask import Flask, jsonify, request, send_from_directory
 from flask.typing import ResponseReturnValue
 from dotenv import load_dotenv
 
 # Cargar variables de entorno desde .env (en raíz del proyecto)
-v3_env_path = Path(__file__).parent.parent.parent / ".env"
+v3_env_path = project_root / ".env"
 load_dotenv(dotenv_path=v3_env_path)
 
 # ---------------------------------------------------------------------------
@@ -872,7 +879,17 @@ def _record_control_cycle(
 
 
 # ---------------------------------------------------------------------------
+# Rutas Estáticas
+# ---------------------------------------------------------------------------
+
+@app.route("/")
+def serve_index() -> ResponseReturnValue:
+    """Sirve el dashboard principal."""
+    return send_from_directory(STATIC_DIR, "index.html")
+
+# ---------------------------------------------------------------------------
 # Rutas API
+# ---------------------------------------------------------------------------
 @app.route("/api/live/market_pulse", methods=["GET"])
 @require_auth
 def get_market_pulse() -> ResponseReturnValue:
@@ -2065,6 +2082,174 @@ def purge_legacy_origin():
     return jsonify({"status": "purged", "component_id": component_id})
 
 # ---------------------------------------------------------------------------
+# Training Review — Datos para el gráfico de revisión pre-entrenamiento
+# ---------------------------------------------------------------------------
+
+@app.route('/api/training/review-data', methods=['GET'])
+@require_auth
+def get_training_review_data():
+    """
+    Retorna OHLCV + zonas + retests combinados para el gráfico de revisión.
+    El operador usa esto para verificar visualmente las detecciones antes de entrenar el Oracle.
+    """
+    import csv
+
+    data_dir = BASE_DIR.parent / "data" / "phase0_results"
+    ohlcv_path = data_dir / "synthetic_ohlcv_2000.csv"
+    retests_path = data_dir / "retests_dataset.json"
+    training_path = data_dir / "training_dataset.json"
+
+    # 1. Load OHLCV
+    ohlcv = []
+    if ohlcv_path.exists():
+        with open(ohlcv_path, newline='') as f:
+            reader = csv.DictReader(f)
+            for i, row in enumerate(reader):
+                ohlcv.append({
+                    "index": i,
+                    "timestamp": int(row.get("close_time", 0)),
+                    "open": float(row["open"]),
+                    "high": float(row["high"]),
+                    "low": float(row["low"]),
+                    "close": float(row["close"]),
+                    "volume": float(row["volume"]),
+                    "regime": row.get("regime", "UNKNOWN"),
+                })
+
+    # 2. Load retests
+    retests = []
+    if retests_path.exists():
+        with open(retests_path) as f:
+            retests = json.load(f)
+
+    # 3. Load training samples (for approval status)
+    training_samples = []
+    if training_path.exists():
+        with open(training_path) as f:
+            training_samples = json.load(f)
+
+    # 4. Build zone map with computed ranges
+    # zone_top = max(high) from key_candle-2 to retest
+    # zone_bottom = min(low) from key_candle-2 to retest
+    zone_map = {}
+    for rt in retests:
+        zid = rt.get("zone_id", "unknown")
+        key_idx = int(zid.split("_")[0]) if "_" in zid else 0
+        retest_idx = rt.get("retest_index", key_idx)
+
+        # Compute zone range from OHLCV data
+        start_idx = max(0, key_idx - 2)
+        end_idx = min(len(ohlcv) - 1, retest_idx)
+
+        zone_top = 0
+        zone_bottom = float('inf')
+        if ohlcv and start_idx <= end_idx:
+            zone_candles = ohlcv[start_idx:end_idx + 1]
+            zone_top = max(c["high"] for c in zone_candles) if zone_candles else 0
+            zone_bottom = min(c["low"] for c in zone_candles) if zone_candles else 0
+
+        if zid not in zone_map:
+            zone_map[zid] = {
+                "zone_id": zid,
+                "direction": zid.split("_")[1] if "_" in zid else "unknown",
+                "key_candle_index": key_idx,
+                "retests": [],
+                "zone_top": zone_top,
+                "zone_bottom": zone_bottom,
+                "zone_start_idx": start_idx,
+                "zone_end_idx": end_idx,
+            }
+        zone_map[zid]["retests"].append(rt)
+
+    # 5. Annotate OHLCV with zone and retest info
+    ohlcv_annotated = []
+    for candle in ohlcv:
+        idx = candle["index"]
+        annotations = []
+
+        # Check if this candle is a key candle (zone origin)
+        for zid, zone_info in zone_map.items():
+            if idx == zone_info["key_candle_index"]:
+                first_retest = zone_info["retests"][0] if zone_info["retests"] else {}
+                annotations.append({
+                    "type": "key_candle",
+                    "zone_id": zid,
+                    "direction": zone_info["direction"],
+                    "quality_score": first_retest.get("quality_score", 0.5),
+                })
+
+        # Check if this candle is a retest point
+        for rt in retests:
+            if rt.get("retest_index") == idx:
+                annotations.append({
+                    "type": "retest",
+                    "zone_id": rt.get("zone_id"),
+                    "retest_price": rt.get("retest_price"),
+                    "outcome": rt.get("outcome"),
+                    "direction": rt.get("direction"),
+                    "regime": rt.get("regime"),
+                    "delta_divergence": rt.get("delta_divergence"),
+                    "vwap_at_retest": rt.get("vwap_at_retest"),
+                    "obi_10_at_retest": rt.get("obi_10_at_retest"),
+                    "cumulative_delta_at_retest": rt.get("cumulative_delta_at_retest"),
+                    "atr_14": rt.get("atr_14"),
+                })
+
+        if annotations:
+            candle["annotations"] = annotations
+            ohlcv_annotated.append(candle)
+
+    # 6. Build zone summary list
+    zones_summary = []
+    for zid, zone_info in zone_map.items():
+        zones_summary.append({
+            "zone_id": zid,
+            "direction": zone_info["direction"],
+            "key_candle_index": zone_info["key_candle_index"],
+            "zone_top": zone_info["zone_top"],
+            "zone_bottom": zone_info["zone_bottom"],
+            "zone_start_idx": zone_info["zone_start_idx"],
+            "zone_end_idx": zone_info["zone_end_idx"],
+            "retest_count": len(zone_info["retests"]),
+            "retest_indices": [rt.get("retest_index") for rt in zone_info["retests"]],
+        })
+
+    # 7. Build summary
+    bounce_count = sum(1 for rt in retests if rt.get("outcome") == "BOUNCE")
+    breakout_count = sum(1 for rt in retests if rt.get("outcome") == "BREAKOUT")
+
+    return jsonify({
+        "ohlcv": ohlcv,
+        "ohlcv_annotated": ohlcv_annotated,
+        "retests": retests,
+        "zones": list(zone_map.keys()),
+        "zones_summary": zones_summary,
+        "zone_count": len(zone_map),
+        "retest_count": len(retests),
+        "candle_count": len(ohlcv),
+        "outcome_distribution": {
+            "BOUNCE": bounce_count,
+            "BREAKOUT": breakout_count,
+            "bounce_pct": round(bounce_count / len(retests) * 100, 1) if retests else 0,
+        },
+        "training_samples_count": len(training_samples),
+    })
+
+
+@app.route('/api/training/retest/<retest_id>/approve', methods=['POST'])
+@require_auth
+def approve_retest(retest_id):
+    """Marcar un retest como aprobado para entrenamiento del Oracle."""
+    return jsonify({"status": "approved", "retest_id": retest_id})
+
+
+@app.route('/api/training/retest/<retest_id>/reject', methods=['POST'])
+@require_auth
+def reject_retest(retest_id):
+    """Marcar un retest como excluido del entrenamiento del Oracle."""
+    return jsonify({"status": "rejected", "retest_id": retest_id})
+
+# ---------------------------------------------------------------------------
 # Arranque
 # ---------------------------------------------------------------------------
 
@@ -2102,7 +2287,9 @@ def _simulation_loop():
             logger.error(f"❌ Simulation Loop Error: {e}")
             time.sleep(10)
 
-if __name__ == "__main__":
+
+def main():
+    """Entry point para lanzar el servidor de GUI."""
     _ensure_dirs()
     print(f"[CGAlpha v3 / Control Room] Iniciando en http://{HOST}:{PORT}")
     print(f"[CGAlpha v3 / Control Room] Auth token activo: {AUTH_TOKEN[:8]}...")
@@ -2117,7 +2304,7 @@ if __name__ == "__main__":
         while True:
             try:
                 _evolution_orchestrator.check_drift_and_evolve()
-                _health_monitor.update_status(_ws_manager.is_running)
+                # _health_monitor.update_status(_ws_manager.is_running)  # Método no existe
             except Exception as e:
                 logger.error(f"❌ Evolution Pulse Error: {e}")
             time.sleep(10)
@@ -2125,7 +2312,6 @@ if __name__ == "__main__":
     threading.Thread(target=_evolution_pulse, daemon=True).start()
 
     # Arrancar WS Managers en segundo plano (Fase 4.2)
-    import threading
     def start_all_ws():
         async def _run():
             tasks = [ws.start() for ws in _ws_managers.values()]
@@ -2136,3 +2322,7 @@ if __name__ == "__main__":
     ws_thread.start()
     
     app.run(host=HOST, port=PORT, debug=False)
+
+
+if __name__ == "__main__":
+    main()

@@ -147,10 +147,33 @@ class TripleCoincidencePipeline:
                 if prediction.confidence > 0.70:
                     # 5. SHADOW TRADING (Captura MFE/MAE)
                     direction = 1 if event.zone.direction == 'bullish' else -1
+
+                    # Capture config snapshot for bridge.jsonl
+                    config_snapshot = {
+                        'volume_threshold': self.detector.config.get('volume_threshold'),
+                        'min_coincidence_score': self.detector.config.get('quality_threshold'),
+                        'oracle_min_confidence': 0.70,
+                    }
+
+                    # Pass complete signal_data for bridge.jsonl persistence
+                    signal_data_for_trade = {
+                        'vwap_at_retest': event.vwap_at_retest,
+                        'obi_10_at_retest': event.obi_10_at_retest,
+                        'cumulative_delta_at_retest': event.cumulative_delta_at_retest,
+                        'delta_divergence': event.delta_divergence,
+                        'atr_14': event.atr_14,
+                        'regime': event.regime,
+                        'direction': event.zone.direction,
+                        'oracle_confidence': prediction.confidence,
+                    }
+
                     trade_id = self.shadow_trader.open_shadow_trade(
                         entry_price=event.retest_price,
                         direction=direction,
-                        atr=event.atr_14
+                        atr=event.atr_14,
+                        config_snapshot=config_snapshot,
+                        signal_data=signal_data_for_trade,
+                        causal_tags=[f"regime:{event.regime}", f"divergence:{event.delta_divergence}"],
                     )
                     logger.info(
                         f"📈 Shadow Trade Abierto: {trade_id} "
@@ -186,7 +209,73 @@ class TripleCoincidencePipeline:
         if decision == "PROMOTED_TO_LAYER_2":
             logger.info("🏆 Estrategia Triple Coincidence Promovida al ADN Permanente.")
 
+        # 7. AUTO-PROPOSER — Detecta drift y genera propuestas automáticas
+        # Construir métricas reales del ciclo para el AutoProposer
+        cycle_metrics = self._build_cycle_metrics()
+        proposals = self.proposer.analyze_drift(cycle_metrics)
+
+        if proposals:
+            logger.info(f"💡 AutoProposer generó {len(proposals)} propuesta(s):")
+            for proposal in proposals:
+                eval_score = self.proposer.evaluate_proposal(proposal)
+                logger.info(
+                    f"   → {proposal.target_attribute}: "
+                    f"{proposal.old_value} → {proposal.new_value} "
+                    f"(causal_est={proposal.causal_score_est:.2f}, "
+                    f"eval_score={eval_score:.4f})"
+                )
+        else:
+            logger.info("✅ AutoProposer: No se detectó drift significativo.")
+
         return decision
+
+    def _build_cycle_metrics(self) -> Dict[str, Any]:
+        """
+        Construye métricas del ciclo actual para el AutoProposer.
+        Combina datos del Oracle, ShadowTrader y detector.
+        """
+        # Oracle metrics
+        oracle_metrics = {}
+        oracle_accuracy = 0.0
+        if self.oracle.model is not None:
+            # Feature importances from the trained model
+            try:
+                importances = self.oracle.model.feature_importances_
+                feature_names = list(self.oracle.feature_columns) if hasattr(self.oracle, 'feature_columns') and self.oracle.feature_columns else []
+                oracle_metrics["feature_importances"] = {
+                    name: float(imp)
+                    for name, imp in zip(feature_names, importances)
+                } if feature_names else {}
+
+                # Estimate accuracy from training data if available
+                if hasattr(self.oracle, 'history') and self.oracle.history:
+                    oracle_accuracy = self.oracle.history[-1].get("accuracy", 0.0)
+            except (AttributeError, IndexError):
+                oracle_metrics["feature_importances"] = {}
+
+        # ShadowTrader metrics
+        total_pnl = self.shadow_trader.get_total_pnl()
+        active_trades = self.shadow_trader.get_active_trade_count()
+        closed_trades = len(self.shadow_trader.order_manager.history)
+
+        # Detector metrics
+        training_samples = self.detector.get_training_dataset()
+        bounce_count = sum(1 for s in training_samples if s.outcome == 'BOUNCE')
+        breakout_count = sum(1 for s in training_samples if s.outcome == 'BREAKOUT')
+        win_rate = (bounce_count / len(training_samples) * 100) if training_samples else 50.0
+
+        return {
+            "oracle_accuracy_oos": oracle_accuracy,
+            "max_drawdown_pct": abs(total_pnl) if total_pnl < 0 else 0.0,
+            "win_rate_pct": win_rate,
+            "sharpe_neto": total_pnl * 2 if total_pnl > 0 else total_pnl,
+            "feature_importances": oracle_metrics.get("feature_importances", {}),
+            "active_shadow_trades": active_trades,
+            "closed_shadow_trades": closed_trades,
+            "total_training_samples": len(training_samples),
+            "bounce_count": bounce_count,
+            "breakout_count": breakout_count,
+        }
 
     def get_training_dataset(self) -> List[TrainingSample]:
         """Retorna el dataset de entrenamiento acumulado."""

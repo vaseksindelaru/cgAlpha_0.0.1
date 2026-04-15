@@ -1308,6 +1308,9 @@ function showSection(name) {
     if (name === "learning") {
         fetchLearningMemoryStatus();
     }
+    if (name === "training") {
+        fetchTrainingReviewData();
+    }
     if (name === "help") {
         helpSearch('inicio');
     }
@@ -2702,4 +2705,471 @@ function toggleFaq(cat, idx) {
         target.classList.add('open');
         target.style.maxHeight = target.scrollHeight + 'px';
     }
+}
+
+// ─────────────────────────────────────────────────────────────
+// TRAINING REVIEW — Candlestick Chart + Retest Table
+// ─────────────────────────────────────────────────────────────
+
+let trainingData = null;
+let trainingCurrentFilter = 'all';
+let trainingCurrentRegime = 'all';
+let trainingSelectedZone = null; // zone_id or null for "all zones"
+let trainingChartInstance = null;
+let trainingViewMode = 'all'; // 'all', 'zone', 'context'
+let trainingContextPadding = 20; // candles around zone
+
+async function fetchTrainingReviewData() {
+    try {
+        const data = await apiFetch('/api/training/review-data');
+        trainingData = data;
+
+        // Update summary stats
+        setText('tr-candle-count', data.candle_count || 0);
+        setText('tr-zone-count', data.zone_count || 0);
+        setText('tr-retest-count', data.retest_count || 0);
+        setText('tr-bounce-count', data.outcome_distribution?.BOUNCE || 0);
+        setText('tr-breakout-count', data.outcome_distribution?.BREAKOUT || 0);
+        setText('tr-bounce-pct', (data.outcome_distribution?.bounce_pct || 0) + '%');
+        setText('tr-training-count', data.training_samples_count || 0);
+        setText('tr-total-count', data.retest_count || 0);
+
+        // Update chart status pill
+        const pill = document.getElementById('chart-status-pill');
+        if (pill) {
+            pill.textContent = `${data.retest_count} retests`;
+            pill.className = 'pill pill-idle';
+        }
+
+        // Update zone nav label
+        updateZoneNavLabel();
+
+        // Render chart and table
+        renderTrainingChart();
+        renderTrainingRetestTable();
+    } catch (e) {
+        console.error('Error fetching training review data:', e);
+        setText('tr-candle-count', 'Error');
+        const pill = document.getElementById('chart-status-pill');
+        if (pill) {
+            pill.textContent = 'Error loading';
+            pill.className = 'pill pill-error';
+        }
+    }
+}
+
+// ── Zone Navigation ──
+function navigateZone(direction) {
+    if (!trainingData || !trainingData.zones_summary?.length) return;
+    const zones = trainingData.zones_summary;
+
+    if (trainingSelectedZone === null) {
+        // Start from first zone
+        trainingSelectedZone = zones[0].zone_id;
+    } else {
+        const currentIdx = zones.findIndex(z => z.zone_id === trainingSelectedZone);
+        const newIdx = currentIdx + direction;
+        if (newIdx >= 0 && newIdx < zones.length) {
+            trainingSelectedZone = zones[newIdx].zone_id;
+        } else if (newIdx < 0) {
+            trainingSelectedZone = zones[zones.length - 1].zone_id;
+        } else {
+            trainingSelectedZone = zones[0].zone_id;
+        }
+    }
+
+    // Auto-set view mode to context if not already on a single zone
+    if (trainingViewMode === 'all') {
+        trainingViewMode = 'context';
+    }
+
+    updateZoneNavLabel();
+    renderTrainingChart();
+    renderTrainingRetestTable();
+}
+
+function showAllZones() {
+    trainingSelectedZone = null;
+    trainingViewMode = 'all';
+    updateZoneNavLabel();
+    renderTrainingChart();
+    renderTrainingRetestTable();
+}
+
+function showZoneContext() {
+    if (trainingSelectedZone === null && trainingData?.zones_summary?.length) {
+        trainingSelectedZone = trainingData.zones_summary[0].zone_id;
+    }
+    trainingViewMode = 'context';
+    updateZoneNavLabel();
+    renderTrainingChart();
+    renderTrainingRetestTable();
+}
+
+function focusTrainingZone(zoneId, retestIndex) {
+    trainingSelectedZone = zoneId;
+    trainingViewMode = 'context';
+    updateZoneNavLabel();
+    renderTrainingChart();
+
+    // Scroll to chart
+    const chartEl = document.getElementById('training-candlestick-chart');
+    if (chartEl) chartEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function updateZoneNavLabel() {
+    const label = document.getElementById('zone-nav-label');
+    if (!label || !trainingData) return;
+
+    if (trainingSelectedZone === null) {
+        label.textContent = `Todas las ${trainingData.zone_count || 0} zonas`;
+    } else {
+        const zones = trainingData.zones_summary || [];
+        const currentIdx = zones.findIndex(z => z.zone_id === trainingSelectedZone);
+        const z = zones[currentIdx];
+        if (z) {
+            label.textContent = `Zona ${currentIdx + 1} de ${zones.length}: ${z.zone_id} [${z.zone_top?.toFixed(0)}]`;
+        }
+    }
+}
+
+function setTrainingFilter(filter) {
+    trainingCurrentFilter = filter;
+    // Don't reset zone selection — let user keep their zone focus
+
+    // Update button states
+    document.querySelectorAll('.tr-filter-btn[data-filter]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.filter === filter);
+    });
+
+    renderTrainingChart();
+    renderTrainingRetestTable();
+}
+
+function setTrainingRegime(regime) {
+    trainingCurrentRegime = regime;
+    trainingSelectedZone = null;
+
+    document.querySelectorAll('.tr-filter-btn[data-regime]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.regime === regime);
+    });
+
+    renderTrainingChart();
+    renderTrainingRetestTable();
+}
+
+function getFilteredRetests() {
+    if (!trainingData) return [];
+    return trainingData.retests.filter(rt => {
+        const matchOutcome = trainingCurrentFilter === 'all' || rt.outcome === trainingCurrentFilter;
+        const matchRegime = trainingCurrentRegime === 'all' || rt.regime === trainingCurrentRegime;
+        return matchOutcome && matchRegime;
+    });
+}
+
+function renderTrainingRetestTable() {
+    const tbody = document.getElementById('training-retest-tbody');
+    if (!tbody) return;
+
+    const filtered = getFilteredRetests();
+    setText('tr-visible-count', filtered.length);
+
+    if (!filtered.length) {
+        tbody.innerHTML = '<tr><td colspan="9" style="padding:20px; text-align:center; color:var(--text-muted);">No hay retests con los filtros actuales</td></tr>';
+        return;
+    }
+
+    let html = '';
+    filtered.forEach((rt, idx) => {
+        const outcomeColor = rt.outcome === 'BOUNCE' ? 'var(--accent)' : 'var(--red)';
+        const dirArrow = rt.direction === 'bullish' ? '▲' : '▼';
+        const dirColor = rt.direction === 'bullish' ? 'var(--accent)' : 'var(--red)';
+        const regimePill = rt.regime === 'LATERAL' ? 'var(--yellow)' : rt.regime === 'TREND' ? 'var(--accent2)' : 'var(--red)';
+
+        html += `<tr style="border-bottom:1px solid rgba(255,255,255,0.03); cursor:pointer;"
+                      onclick="focusTrainingZone('${rt.zone_id}', ${rt.retest_index})">
+            <td style="padding:8px 12px; color:var(--text-muted);">${idx + 1}</td>
+            <td style="padding:8px 12px; color:var(--text); font-family:monospace;">${rt.zone_id}</td>
+            <td style="padding:8px 12px; color:var(--text); font-family:monospace;">${rt.retest_price?.toFixed(2) || '—'}</td>
+            <td style="padding:8px 12px;"><span style="color:${regimePill}; font-weight:600;">${rt.regime}</span></td>
+            <td style="padding:8px 12px; color:var(--text-dim); font-size:11px;">${rt.delta_divergence || 'NEUTRAL'}</td>
+            <td style="padding:8px 12px; color:var(--text); font-family:monospace; font-size:11px;">${rt.vwap_at_retest?.toFixed(2) || '—'}</td>
+            <td style="padding:8px 12px; color:var(--text); font-family:monospace; font-size:11px;">${rt.obi_10_at_retest?.toFixed(3) || '—'}</td>
+            <td style="padding:8px 12px;"><span style="color:${outcomeColor}; font-weight:700;">${rt.outcome || '—'}</span></td>
+            <td style="padding:8px 12px; color:${dirColor}; font-weight:700;">${dirArrow}</td>
+        </tr>`;
+    });
+    tbody.innerHTML = html;
+}
+
+function focusTrainingZone(zoneId, retestIndex) {
+    trainingSelectedZone = zoneId;
+    renderTrainingChart();
+
+    // Scroll to chart
+    const chartEl = document.getElementById('training-candlestick-chart');
+    if (chartEl) chartEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function renderTrainingChart() {
+    const chartDiv = document.getElementById('training-candlestick-chart');
+    if (!chartDiv || !trainingData) return;
+
+    let ohlcv = trainingData.ohlcv || [];
+    const retests = getFilteredRetests();
+    const zonesSummary = trainingData.zones_summary || [];
+
+    if (!ohlcv.length) {
+        chartDiv.innerHTML = '<div style="display:flex; align-items:center; justify-content:center; height:100%; color:var(--text-muted); font-size:14px;">No hay datos OHLCV disponibles</div>';
+        return;
+    }
+
+    // ── View mode: filter candles to show ──
+    let candleOffset = 0;
+    let displayOhlcv = ohlcv;
+
+    if (trainingViewMode === 'context' && trainingSelectedZone) {
+        const zone = zonesSummary.find(z => z.zone_id === trainingSelectedZone);
+        if (zone) {
+            const centerIdx = zone.key_candle_index;
+            const startIdx = Math.max(0, centerIdx - trainingContextPadding);
+            const endIdx = Math.min(ohlcv.length - 1, zone.zone_end_idx + trainingContextPadding);
+            displayOhlcv = ohlcv.slice(startIdx, endIdx + 1);
+            candleOffset = startIdx;
+        }
+    } else if (trainingViewMode === 'zone' && trainingSelectedZone) {
+        const zone = zonesSummary.find(z => z.zone_id === trainingSelectedZone);
+        if (zone) {
+            displayOhlcv = ohlcv.slice(zone.zone_start_idx, zone.zone_end_idx + 1);
+            candleOffset = zone.zone_start_idx;
+        }
+    }
+
+    // Calculate price range for scaling
+    const allHighs = displayOhlcv.map(c => c.high);
+    const allLows = displayOhlcv.map(c => c.low);
+    let maxPrice = Math.max(...allHighs);
+    let minPrice = Math.min(...allLows);
+
+    // Include zone tops and bottoms in price range if in single zone mode
+    if (trainingSelectedZone) {
+        const zone = zonesSummary.find(z => z.zone_id === trainingSelectedZone);
+        if (zone) {
+            maxPrice = Math.max(maxPrice, zone.zone_top);
+            minPrice = Math.min(minPrice, zone.zone_bottom);
+        }
+    }
+
+    const priceRange = maxPrice - minPrice || 1;
+    // Add 5% padding
+    const pricePadding = priceRange * 0.05;
+    maxPrice += pricePadding;
+    minPrice -= pricePadding;
+    const adjustedRange = maxPrice - minPrice;
+
+    // Chart dimensions
+    const width = chartDiv.clientWidth || 1200;
+    const height = chartDiv.clientHeight || 520;
+    const marginLeft = 60;
+    const marginRight = 20;
+    const marginTop = 20;
+    const marginBottom = 40;
+    const chartWidth = width - marginLeft - marginRight;
+    const chartHeight = height - marginTop - marginBottom;
+
+    // Helper: price to Y coordinate
+    function priceToY(price) {
+        return marginTop + chartHeight - (chartHeight * (price - minPrice) / adjustedRange);
+    }
+
+    // Helper: candle index to X coordinate
+    function idxToX(idx) {
+        const localIdx = idx - candleOffset;
+        if (localIdx < 0 || localIdx >= displayOhlcv.length) return -1;
+        const gap = chartWidth / displayOhlcv.length;
+        return marginLeft + localIdx * gap + gap / 2;
+    }
+
+    // Build SVG
+    let svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">`;
+
+    // Background
+    svg += `<rect width="${width}" height="${height}" fill="var(--bg3)" />`;
+
+    // Price axis labels
+    const priceSteps = 6;
+    for (let i = 0; i <= priceSteps; i++) {
+        const price = minPrice + (adjustedRange * i / priceSteps);
+        const y = priceToY(price);
+        svg += `<line x1="${marginLeft - 5}" y1="${y}" x2="${marginLeft}" y2="${y}" stroke="#333" stroke-width="1" />`;
+        svg += `<text x="${marginLeft - 8}" y="${y + 4}" text-anchor="end" fill="#777" font-size="10" font-family="monospace">${price.toFixed(0)}</text>`;
+
+        // Horizontal grid line
+        if (i > 0 && i < priceSteps) {
+            svg += `<line x1="${marginLeft}" y1="${y}" x2="${width - marginRight}" y2="${y}" stroke="rgba(255,255,255,0.03)" stroke-width="1" />`;
+        }
+    }
+
+    // ── 1. Draw zone rectangles (BEFORE candles, so they're behind) ──
+    const gap = chartWidth / displayOhlcv.length;
+    zonesSummary.forEach(zone => {
+        const localStart = zone.zone_start_idx - candleOffset;
+        const localEnd = zone.zone_end_idx - candleOffset;
+
+        // Skip if zone is completely outside visible range
+        if (localEnd < 0 || localStart >= displayOhlcv.length) return;
+
+        const visibleStart = Math.max(0, localStart);
+        const visibleEnd = Math.min(displayOhlcv.length - 1, localEnd);
+        if (visibleStart > visibleEnd) return;
+
+        const x1 = marginLeft + visibleStart * gap;
+        const x2 = marginLeft + (visibleEnd + 1) * gap;
+        const yTop = priceToY(zone.zone_top);
+        const yBottom = priceToY(zone.zone_bottom);
+
+        // Zone rectangle
+        const isBullish = zone.direction === 'bullish';
+        const fillColor = isBullish ? 'rgba(0,212,170,0.06)' : 'rgba(255,107,107,0.06)';
+        const strokeColor = isBullish ? 'rgba(0,212,170,0.25)' : 'rgba(255,107,107,0.25)';
+
+        svg += `<rect x="${x1}" y="${yTop}" width="${x2 - x1}" height="${yBottom - yTop}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="1" stroke-dasharray="3,2" rx="2" />`;
+
+        // Zone label
+        const labelX = (x1 + x2) / 2;
+        const labelY = yTop + 12;
+        const labelColor = isBullish ? 'rgba(0,212,170,0.6)' : 'rgba(255,107,107,0.6)';
+        svg += `<text x="${labelX}" y="${labelY}" text-anchor="middle" fill="${labelColor}" font-size="8" font-family="sans-serif">${zone.zone_id}</text>`;
+
+        // Draw connection line from zone center to each retest
+        zone.retest_indices.forEach(rtIdx => {
+            const isFiltered = retests.some(rt => rt.retest_index === rtIdx);
+            if (!isFiltered) return;
+
+            const retestX = idxToX(rtIdx);
+            if (retestX < 0) return;
+
+            // Find retest data for price
+            const rtData = retests.find(rt => rt.retest_index === rtIdx);
+            if (!rtData) return;
+
+            const retestY = priceToY(rtData.retest_price);
+
+            // Dotted connection line
+            svg += `<line x1="${labelX}" y1="${yTop + (yBottom - yTop) / 2}" x2="${retestX}" y2="${retestY}" stroke="#00aef0" stroke-width="1.2" stroke-dasharray="5,3" opacity="0.35" />`;
+
+            // Outcome line: from retest to outcome candle (N candles after)
+            if (rtData.outcome) {
+                const outcomeIdx = rtIdx + 5; // Look 5 candles ahead for outcome
+                const outcomeX = idxToX(outcomeIdx);
+                if (outcomeX > 0 && outcomeX < width) {
+                    const outcomeColor = rtData.outcome === 'BOUNCE' ? '#00d4aa' : '#ff6b6b';
+                    svg += `<line x1="${retestX}" y1="${retestY}" x2="${outcomeX}" y2="${retestY}" stroke="${outcomeColor}" stroke-width="1" stroke-dasharray="3,3" opacity="0.25" />`;
+                }
+            }
+        });
+    });
+
+    // ── 2. Draw candles ──
+    const candleWidth = Math.max(2, Math.min(8, gap * 0.7));
+
+    displayOhlcv.forEach((candle, localI) => {
+        const x = marginLeft + localI * gap + gap / 2;
+        const isUp = candle.close >= candle.open;
+        const color = isUp ? '#00d4aa' : '#ff6b6b';
+
+        const highY = priceToY(candle.high);
+        const lowY = priceToY(candle.low);
+        const openY = priceToY(candle.open);
+        const closeY = priceToY(candle.close);
+
+        // Wick
+        svg += `<line x1="${x}" y1="${highY}" x2="${x}" y2="${lowY}" stroke="${color}" stroke-width="1" opacity="0.6" />`;
+
+        // Body
+        const bodyTop = Math.min(openY, closeY);
+        const bodyHeight = Math.max(1, Math.abs(closeY - openY));
+        const fill = isUp ? 'rgba(0,212,170,0.15)' : 'rgba(255,107,107,0.15)';
+        svg += `<rect x="${x - candleWidth / 2}" y="${bodyTop}" width="${candleWidth}" height="${bodyHeight}" fill="${fill}" stroke="${color}" stroke-width="1" rx="1" />`;
+    });
+
+    // ── 3. Draw annotations on top ──
+    displayOhlcv.forEach((candle, localI) => {
+        const globalIdx = candle.index;
+        const x = marginLeft + localI * gap + gap / 2;
+
+        // Key candle "V" marker
+        if (trainingSelectedZone === null || trainingSelectedZone) {
+            const zones = zonesSummary.filter(z => z.key_candle_index === globalIdx);
+            const showZone = trainingSelectedZone === null || zones.some(z => z.zone_id === trainingSelectedZone);
+            if (showZone && zones.length) {
+                const zone = zones[0];
+                const isBullish = zone.direction === 'bullish';
+                const highY = priceToY(candle.high);
+                const labelY = highY - 14;
+                const labelColor = isBullish ? '#00d4aa' : '#ff6b6b';
+                const bgColor = isBullish ? 'rgba(0,212,170,0.15)' : 'rgba(255,107,107,0.15)';
+
+                svg += `<rect x="${x - gap}" y="${labelY - 8}" width="${gap * 2}" height="16" fill="${bgColor}" rx="4" stroke="${labelColor}" stroke-width="0.5" />`;
+                svg += `<text x="${x}" y="${labelY + 4}" text-anchor="middle" fill="${labelColor}" font-size="10" font-weight="bold" font-family="sans-serif">V</text>`;
+            }
+        }
+
+        // Retest markers
+        const isBullish = candle.close >= candle.open;
+        const retestsAtIdx = retests.filter(rt => rt.retest_index === globalIdx);
+        retestsAtIdx.forEach(rt => {
+            const y = priceToY(rt.retest_price);
+            const outcomeColor = rt.outcome === 'BOUNCE' ? '#00d4aa' : rt.outcome === 'BREAKOUT' ? '#ff6b6b' : '#f59e0b';
+            const outcomeSymbol = rt.outcome === 'BOUNCE' ? '●' : rt.outcome === 'BREAKOUT' ? '✗' : '?';
+
+            // Circle marker with glow
+            svg += `<circle cx="${x}" cy="${y}" r="8" fill="${outcomeColor}" opacity="0.15" />`;
+            svg += `<circle cx="${x}" cy="${y}" r="5" fill="${outcomeColor}" stroke="#fff" stroke-width="1" opacity="0.9" />`;
+            svg += `<text x="${x}" y="${y + 4}" text-anchor="middle" fill="#fff" font-size="7" font-weight="bold">${outcomeSymbol}</text>`;
+
+            // Direction arrow
+            const dirArrow = rt.direction === 'bullish' ? '▲' : '▼';
+            const dirColor = rt.direction === 'bullish' ? '#00d4aa' : '#ff6b6b';
+            svg += `<text x="${x}" y="${y - 12}" text-anchor="middle" fill="${dirColor}" font-size="10" font-weight="bold">${dirArrow}</text>`;
+
+            // Regime indicator
+            const regimeColor = rt.regime === 'LATERAL' ? '#f59e0b' : rt.regime === 'TREND' ? '#00aef0' : '#ff6b6b';
+            svg += `<text x="${x}" y="${y + 18}" text-anchor="middle" fill="${regimeColor}" font-size="7">${rt.regime}</text>`;
+        });
+    });
+
+    // ── 4. Highlight selected zone border ──
+    if (trainingSelectedZone) {
+        const zone = zonesSummary.find(z => z.zone_id === trainingSelectedZone);
+        if (zone) {
+            const localStart = zone.zone_start_idx - candleOffset;
+            const localEnd = zone.zone_end_idx - candleOffset;
+            if (localStart >= 0 && localEnd < displayOhlcv.length && localEnd >= localStart) {
+                const x1 = marginLeft + localStart * gap;
+                const x2 = marginLeft + (localEnd + 1) * gap;
+                const yTop = priceToY(zone.zone_top);
+                const yBottom = priceToY(zone.zone_bottom);
+                const borderColor = zone.direction === 'bullish' ? '#00d4aa' : '#ff6b6b';
+                svg += `<rect x="${x1}" y="${yTop}" width="${x2 - x1}" height="${yBottom - yTop}" fill="none" stroke="${borderColor}" stroke-width="2" rx="4" opacity="0.6" />`;
+            }
+        }
+    }
+
+    // ── 5. X-axis label ──
+    const startLabel = displayOhlcv[0]?.index ?? 0;
+    const endLabel = displayOhlcv[displayOhlcv.length - 1]?.index ?? 0;
+    svg += `<text x="${width / 2}" y="${height - 5}" text-anchor="middle" fill="#777" font-size="10" font-family="sans-serif">Candle Index: ${startLabel} → ${endLabel} (${displayOhlcv.length} velas)</text>`;
+
+    // ── 6. Legend ──
+    const legendY = marginTop + 12;
+    svg += `<circle cx="${width - marginRight - 220}" cy="${legendY}" r="4" fill="#00d4aa" />`;
+    svg += `<text x="${width - marginRight - 212}" y="${legendY + 4}" fill="#aaa" font-size="9">BOUNCE</text>`;
+    svg += `<circle cx="${width - marginRight - 150}" cy="${legendY}" r="4" fill="#ff6b6b" />`;
+    svg += `<text x="${width - marginRight - 142}" y="${legendY + 4}" fill="#aaa" font-size="9">BREAKOUT</text>`;
+    svg += `<text x="${width - marginRight - 65}" y="${legendY + 4}" fill="#f59e0b" font-size="9">V=Key</text>`;
+
+    svg += `</svg>`;
+
+    chartDiv.innerHTML = svg;
 }

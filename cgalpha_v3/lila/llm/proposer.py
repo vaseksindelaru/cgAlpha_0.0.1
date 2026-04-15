@@ -150,9 +150,56 @@ class AutoProposer(BaseComponentV3):
     def evaluate_proposal(self, spec: TechnicalSpec) -> float:
         """
         Estima el impacto causal de un cambio propuesto antes de implementarlo.
+        Usa heurísticas basadas en tipo de cambio, magnitud del delta y confianza.
+        Retorna score en [0.0, 1.0].
         """
-        # Lógica de simulación o inferencia causal histórica (bridge.jsonl)
-        return 0.78 # Score causal estimado
+        score = 0.0
+
+        # ── Base por tipo de cambio ──
+        if spec.change_type == "parameter":
+            # Cambios paramétricos son más seguros (reversibles, bajo riesgo)
+            score += 0.30
+        elif spec.change_type == "feature":
+            # Cambios de features son moderados (pérdida de información posible)
+            score += 0.20
+        elif spec.change_type == "optimization":
+            # Optimizaciones son más riesgosas
+            score += 0.15
+
+        # ── Magnitud del delta relativo ──
+        if spec.old_value != 0:
+            delta_ratio = abs(spec.new_value - spec.old_value) / abs(spec.old_value)
+        else:
+            delta_ratio = 0.0 if spec.new_value == 0 else 1.0
+
+        # Delta pequeño (<10%) → más seguro
+        if delta_ratio < 0.10:
+            score += 0.25
+        elif delta_ratio < 0.30:
+            score += 0.20
+        elif delta_ratio < 0.50:
+            score += 0.15
+        else:
+            score += 0.05  # Delta grande → más riesgo
+
+        # ── Feature elimination: ajustar por importancia actual ──
+        if spec.change_type == "feature" and spec.new_value == 0.0:
+            # Feature con importancia muy baja (<2%) → eliminar es más seguro
+            if spec.old_value < 0.02:
+                score += 0.20
+            elif spec.old_value < 0.05:
+                score += 0.15
+            else:
+                score += 0.05  # Feature importante → eliminar es riesgoso
+
+        # ── Confidence del AutoProposer ──
+        score += spec.confidence * 0.25  # Max 0.25 points from confidence
+
+        # ── Causal score estimate ──
+        score += spec.causal_score_est * 0.10  # Max 0.10 points from causal est.
+
+        # Clamp to [0, 1]
+        return round(min(max(score, 0.0), 1.0), 4)
 
     @classmethod
     def create_default(cls):
