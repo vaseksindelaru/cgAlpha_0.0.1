@@ -379,10 +379,16 @@ class EvolutionOrchestratorV4:
         pending = self.memory.get_pending_proposals()
         target = None
         for entry in pending:
-            data = json.loads(entry.content)
-            if data.get("proposal_id") == proposal_id:
-                target = entry
-                break
+            try:
+                if not entry.content:
+                    continue
+                data = json.loads(entry.content)
+                if data.get("proposal_id") == proposal_id:
+                    target = entry
+                    break
+            except json.JSONDecodeError:
+                logger.warning(f"Skipping corrupt memory entry: {entry.entry_id}")
+                continue
 
         if not target:
             return EvolutionResult(
@@ -416,6 +422,35 @@ class EvolutionOrchestratorV4:
         )
 
         logger.info(f"✅ Proposal {proposal_id} APPROVED by {approved_by}")
+        
+        # Trigger Execution via Sage
+        if self.sage:
+            try:
+                # Reconstruir TechnicalSpec desde data
+                from cgalpha_v3.lila.llm.proposer import TechnicalSpec
+                spec_dict = data.get("spec", {})
+                spec = TechnicalSpec(**spec_dict)
+                
+                exec_result = self.sage.execute_proposal(
+                    spec,
+                    ghost_approved=True,
+                    human_approved=True 
+                )
+                result.tests_passed = getattr(exec_result, "tests_passed", False)
+                result.branch_name = getattr(exec_result, "branch_name", "")
+                
+                if result.tests_passed:
+                    result.status = "SUCCESS"
+                    logger.info(f"🚀 Evolución ejecutada exitosamente: {proposal_id}")
+                else:
+                    result.status = "FAILED"
+                    result.error = getattr(exec_result, "error_message", "Tests failed")
+                    logger.error(f"❌ Evolución fallida (Tests): {result.error}")
+            except Exception as e:
+                result.status = "ERROR"
+                result.error = f"Execution error: {str(e)}"
+                logger.error(f"💥 Error crítico en ejecución de aprobación: {e}")
+
         self._append_evolution_log(None, result, approved_by=approved_by)
         return result
 
