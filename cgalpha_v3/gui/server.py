@@ -70,7 +70,8 @@ from cgalpha_v3.infrastructure.binance_websocket_manager import BinanceWebSocket
 from cgalpha_v3.infrastructure.signal_detector.triple_coincidence import TripleCoincidenceDetector
 from cgalpha_v3.application.live_adapter import LiveDataFeedAdapter
 from cgalpha_v3.lila.llm.oracle import OracleTrainer_v3
-from cgalpha_v3.lila.evolution_orchestrator import EvolutionOrchestrator
+from cgalpha_v3.lila.evolution_orchestrator import EvolutionOrchestratorV4
+from cgalpha_v3.lila.llm.llm_switcher import LLMSwitcher
 from cgalpha_v3.data_quality.nexus_gate import NexusGate
 from cgalpha_v3.risk.order_manager import DryRunOrderManager
 from cgalpha_v3.risk.execution_factory import create_order_manager
@@ -80,11 +81,14 @@ _lila_mgr = LibraryManager()
 _change_proposer = ChangeProposer()
 _experiment_runner = ExperimentRunner()
 _memory_engine = MemoryPolicyEngine()
+_memory_load_result = _memory_engine.load_from_disk()
+logger.info(f"\u2705 Memoria cargada desde disco: {_memory_load_result}")
 _health_monitor = HealthMonitor()
 _promotion_validator = PromotionValidator()
 _production_gate = ProductionGate(_promotion_validator)
 _history_learner = ProjectHistoryLearner(_memory_engine, BASE_DIR.parent.parent) 
 _assistant = LLMAssistant() # Migrado a v3
+_llm_switcher = LLMSwitcher(assistant=_assistant)
 _ws_manager = BinanceWebSocketManager.create_default()
 
 # Multi-Asset Execution Layer (Fase 4.3)
@@ -111,8 +115,12 @@ for symbol in SYMBOLS:
 _shadow_trader = _adapters["BTCUSDT"]
 _ws_manager = _ws_managers["BTCUSDT"]
 
-# Evolution Layer
-_evolution_orchestrator = EvolutionOrchestrator(_shadow_trader, _oracle_v3, _change_proposer)
+# Evolution Layer v4
+_evolution_orchestrator = EvolutionOrchestratorV4(
+    memory=_memory_engine,
+    switcher=_llm_switcher,
+    assistant=_assistant,
+)
 
 _latest_proposal: Proposal | None = Proposal(
     proposal_id="prop-foundation-default",
@@ -2072,6 +2080,80 @@ def promote_component():
     logger.info(f"🧬 PROMOCIÓN ATÓMICA: {component_id}")
     return jsonify({"status": "promoted", "component_id": component_id})
 
+
+# ───────────────────────────────────────────────────────────────────────────
+# EVOLUTION & LEARNING V4 ENDPOINTS
+# ───────────────────────────────────────────────────────────────────────────
+
+@app.route("/api/evolution/proposals", methods=["GET"])
+def get_evolution_proposals():
+    """Lista propuestas de evolución pendientes (Cat.2/3)."""
+    return jsonify(_evolution_orchestrator.get_pending_summary())
+
+@app.route("/api/evolution/proposal/<proposal_id>/approve", methods=["POST"])
+def approve_evolution_proposal(proposal_id):
+    """Aprueba una propuesta y dispara ejecución via Sage."""
+    result = _evolution_orchestrator.approve_proposal(proposal_id, approved_by="human")
+    return jsonify({
+        "status": result.status,
+        "category": result.category,
+        "proposal_id": result.proposal_id,
+        "error": result.error
+    })
+
+@app.route("/api/evolution/proposal/<proposal_id>/reject", methods=["POST"])
+def reject_evolution_proposal(proposal_id):
+    """Rechaza una propuesta con razón opcional."""
+    data = request.json or {}
+    reason = data.get("reason", "No reason provided")
+    result = _evolution_orchestrator.reject_proposal(proposal_id, reason=reason)
+    return jsonify({
+        "status": result.status,
+        "category": result.category,
+        "proposal_id": result.proposal_id
+    })
+
+@app.route("/api/evolution/log", methods=["GET"])
+def get_evolution_log():
+    """Devuelve el historial completo de evolución (log.jsonl)."""
+    log_path = Path("cgalpha_v3/memory/evolution_log.jsonl")
+    if not log_path.exists():
+        return jsonify([])
+    
+    lines = log_path.read_text().strip().split("\n")
+    return jsonify([json.loads(line) for line in lines if line.strip()])
+
+@app.route("/api/evolution/stats", methods=["GET"])
+def get_evolution_stats():
+    """Estadísticas de evolución para el dashboard."""
+    return jsonify({
+        "stats": _evolution_orchestrator.get_stats(),
+        "routing": _llm_switcher.get_routing_table() if _llm_switcher else {}
+    })
+
+@app.route("/learning/operator", methods=["GET"])
+def get_whitepaper_html():
+    """Renderiza el WHITEPAPER.md como HTML para el operador."""
+    wp_path = Path("cgalpha_v4/WHITEPAPER.md")
+    if not wp_path.exists():
+        return "White Paper not found", 404
+    
+    content = wp_path.read_text()
+    # Simplificación: En producción usaríamos un convertidor markdown -> html
+    return f"<html><body style='background:#121212; color:#eee; font-family:sans-serif; padding:40px;'><pre>{content}</pre></body></html>"
+
+@app.route("/learning/lila", methods=["GET"])
+def get_lila_insights():
+    """Dashboard de reflexiones y sabiduría de Lila."""
+    insights = _memory_engine.list_entries(field="memory_librarian", limit=20)
+    return jsonify([{
+        "id": e.entry_id,
+        "content": e.content,
+        "level": e.level.value,
+        "timestamp": e.created_at.isoformat(),
+        "tags": e.tags
+    } for e in insights])
+
 @app.route('/api/vault/purge', methods=['POST'])
 @require_auth
 def purge_legacy_origin():
@@ -2299,15 +2381,16 @@ def main():
     # Iniciar simulación de vida
     threading.Thread(target=_simulation_loop, daemon=True).start()
     
-    # Iniciar pulso de evolución real (Capa 5)
+    # Iniciar pulso de evolución v4 (escalaciones periódicas)
     def _evolution_pulse():
         while True:
             try:
-                _evolution_orchestrator.check_drift_and_evolve()
-                # _health_monitor.update_status(_ws_manager.is_running)  # Método no existe
+                escalated = _evolution_orchestrator.check_escalations()
+                if escalated:
+                    logger.info(f"⬆️ Escalaciones procesadas: {escalated}")
             except Exception as e:
                 logger.error(f"❌ Evolution Pulse Error: {e}")
-            time.sleep(10)
+            time.sleep(60)  # v4: check every 60s
     
     threading.Thread(target=_evolution_pulse, daemon=True).start()
 
