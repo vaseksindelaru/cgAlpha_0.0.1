@@ -535,6 +535,9 @@ def _append_evolution_log(self, spec: TechnicalSpec, result,
 | `/api/evolution/log` | GET | Historial de evoluciones (últimas 50) | @require_auth |
 | `/api/evolution/stats` | GET | Estadísticas: propuestas/día, ratio aprobación | @require_auth |
 | `/api/evolution/escalations` | GET | Propuestas que escalaron de categoría | @require_auth |
+| `/learning/operator` | GET | White paper + guía de parámetros + glosario (§2.6/§2.7.1) | @require_auth |
+| `/learning/lila` | GET | Reflexiones, diario de evolución, estadísticas (§2.7.2) | @require_auth |
+| `/api/whitepaper` | GET | WHITEPAPER.md renderizado como JSON/HTML | @require_auth |
 
 **C43: Endpoint de rechazo con actualización de reflexiones:**
 ```python

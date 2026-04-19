@@ -53,6 +53,28 @@ Es tres cosas simultáneamente:
 
 No es una constitución filosófica. Es un documento operativo con paths de ficheros reales, nombres de clases reales, y bugs documentados con números de línea.
 
+### Nomenclatura oficial
+
+A partir de este documento, los nombres canónicos del proyecto son:
+
+| Nombre canónico | Uso | Nota |
+|---|---|---|
+| **cgAlpha** | El proyecto completo (Causal Graph Alpha) | Minúscula `c` distingue de CGAlpha legacy (v1-v3) |
+| **Lila** | La IA constructora (sin sufijo de versión) | En código interno y docs. El versionado se infiere del contexto |
+
+**Mapeo de nombres históricos (solo para referencia):**
+
+| Nombre histórico | Período | Equivalente actual |
+|---|---|---|
+| Aipha | Pre-v1 | cgAlpha (mismo proyecto, nombre anterior) |
+| CGAlpha_v1, CGAlpha_v2 | Versiones tempranas | cgAlpha (versiones legacy) |
+| CGAlpha_v3, CGAlpha_0.0.1 | Versión actual estable | cgAlpha |
+| Lila v3, Lila v4 | Agentes por versión | Lila |
+
+**En código:** Los directorios (`cgalpha_v3/`, `cgalpha_v4/`) y los imports (`from cgalpha_v3...`) **no se renombran**. Renombrar carpetas rompe imports en 144+ tests — eso sería un cambio Cat.3 masivo sin beneficio funcional. La nomenclatura nueva aplica a documentación, GUI, y comunicación.
+
+**En la GUI:** Donde antes decía "CGAlpha v3 Control Room", ahora dice "cgAlpha Control Room". Sin número de versión visible para el operador.
+
 ---
 
 ## §1 — LO QUE HEREDAS: INVENTARIO HONESTO
@@ -335,9 +357,9 @@ cgalpha_v3/
 
 | Sección | Fichero | Contenido |
 |---|---|---|
-| §0 Cabecera de Transmisión | `LILA_V4_PROMPT_FUNDACIONAL.md` | Quién escribe, a quién, qué es, precondición |
+| §0 Cabecera de Transmisión | `LILA_V4_PROMPT_FUNDACIONAL.md` | Quién escribe, a quién, qué es, precondición, nomenclatura |
 | §1 Inventario Honesto | `LILA_V4_PROMPT_FUNDACIONAL.md` | Lo que funciona, 8 bugs, 4 islas, stack técnico |
-| §2 Misión Primaria | `S2_MISION_PRIMARIA.md` | Cerrar la cadena, criterio de éxito, no-goals |
+| §2 Misión Primaria | `S2_MISION_PRIMARIA.md` | Cerrar la cadena, criterio de éxito, no-goals, white paper, learning GUI |
 | §3 Orden de Construcción | `S3_ORDEN_DE_CONSTRUCCION.md` | Bootstrap paradox, 6 pasos canónicos, invariante topológico |
 | §4 Orchestrator v4 Spec | `S4_ORCHESTRATOR_V4_SPEC.md` | 3 categorías, clasificación, escalada, adaptadores, GUI |
 | §5 Memoria Inteligente v4 | `S5_MEMORIA_INTELIGENTE_V4.md` | 7 niveles, IDENTITY, load_from_disk, tests |
