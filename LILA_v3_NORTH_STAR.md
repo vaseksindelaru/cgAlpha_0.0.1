@@ -40,6 +40,107 @@
 
 ---
 
+## REGISTRO DE CAMBIOS IMPLEMENTADOS — SESIÓN 17 ABRIL 2026
+
+### Cambios Arquitectónicos
+
+| Componente | Status Anterior | Status Actual | Impacto |
+|---|---|---|---|
+| **ShadowTrader** | Stub (devolvía ID hardcoded) | ✅ Delegado a DryRunOrderManager | Paper trading real con MFE/MAE, PnL, comisiones, slippage |
+| **bridge.jsonl** | Referenciado en 15+ docs, nunca persistido | ✅ Implementado | Cada trade registrado con config_snapshot, signal_data, causal_tags |
+| **AutoProposer.evaluate_proposal()** | Retornaba siempre 0.78 (stub) | ✅ Lógica heurística real | Score basado en tipo cambio, magnitud delta, importancia feature |
+| **AutoProposer.analyze_drift()** | Llamado manualmente desde scripts | ✅ Integrado en pipeline cycle | Se ejecuta automáticamente al final de cada run_cycle() |
+| **Pipeline training loop** | No reentrenaba al cargar nuevos samples | ❌ **NO IMPLEMENTADO** — `pipeline.py` líneas 188-194 llama `load_training_dataset()` pero **nunca** `train_model()`. El Oracle acumula samples sin aprender de ellos. Ver BUG-6 en LILA_V4 §1.2. | oracle.train_model() **no** se llama tras load_training_dataset() |
+
+### GUI Training Review — Nuevo Módulo
+
+**Objetivo:** Permitir curación manual de datos de entrenamiento ANTES de entrenar el Oracle (no después).
+
+**Componentes implementados:**
+
+1. **Backend endpoint:** `GET /api/training/review-data`
+   - Combina OHLCV (500 velas) + retests (21 detectados) + training samples (98 pares)
+   - Calcula zone_top/zone_bottom desde high/low de velas en rango
+   - Retorna anotaciones por candle (key_candle, retest con outcome)
+
+2. **Frontend chart:** SVG candlestick con:
+   - Mechas + cuerpos coloreados (verde=alcista, rojo=bajista)
+   - Rectángulos semi-transparentes de zona (rgba(0,212,170,0.06) bullish / rgba(255,107,107,0.06) bearish)
+   - Líneas punteadas zona→retest→outcome (stroke-dasharray="4,3")
+   - Marcadores "V" amarillos en velas clave
+   - Círculos de retest: verde=BOUNCE (19), rojo=BREAKOUT (2)
+   - Flechas de dirección ▲▼
+   - Indicadores de régimen (LATERAL/TREND)
+
+3. **Navegación:** ← → por zona con zoom contexto ±20 velas
+
+4. **Filtros:** Pills para outcome (BOUNCE/BREAKOUT) y régimen (LATERAL/TREND)
+
+5. **Tabla interactiva:** 9 columnas con click-to-focus en zona
+
+### Persistencia de Decisiones (Training Approvals)
+
+**Nuevos endpoints:**
+
+- `POST /api/training/retest/<index>/approve` → guarda en `training_approvals.jsonl`
+- `POST /api/training/retest/<index>/reject` → guarda en `training_approvals.jsonl`
+- `GET /api/training/approvals` → carga mapa de decisiones
+
+**Schema de training_approvals.jsonl:**
+```json
+{
+  "ts": "2026-04-17T14:30:00+00:00",
+  "retest_index": 56,
+  "zone_id": "56_bullish",
+  "decision": "approved|rejected",
+  "corrected_label": "BOUNCE|BREAKOUT",
+  "reason": "user feedback"
+}
+```
+
+### Flujo de Curación de Datos (Nuevo)
+
+```
+[Pipeline detecta retests] 
+  ↓ (labels crudos: 0.5% umbral arbitrario)
+[Training Review GUI] 
+  ↓ (operador revisa + valida)
+[training_approvals.jsonl]
+  ↓ (filtro al entrenar)
+[Oracle.train_model()]
+  ↓ (solo samples aprobados)
+[Modelo mejor, porque datos son correctos]
+```
+
+### Testing
+
+✅ **144/144 tests pass** (incluye 14 nuevos para ShadowTrader + bridge + AutoProposer)
+
+- `test_shadow_trader_has_order_manager`
+- `test_open_shadow_trade_records_position`
+- `test_bridge_entry_has_correct_schema`
+- `test_evaluate_proposal_returns_float`
+- `test_analyze_drift_integrated_in_cycle`
+- 9 más...
+
+### Commit
+
+```
+700abd9 feat(training): Training Review Chart + ShadowTrader bridge.jsonl integration
+- ShadowTrader now delegates to DryRunOrderManager for real PnL/SL/TP execution
+- bridge.jsonl persistence: every trade recorded with config_snapshot, signal_data, causal_tags
+- AutoProposer.evaluate_proposal() replaced hardcoded 0.78 with heuristic scoring
+- AutoProposer.analyze_drift() now runs automatically in pipeline cycle
+- Training Review GUI section with SVG candlestick chart showing zones, retests, outcomes
+- Zone shaded rectangles (bullish/bearish ranges), dotted connection lines zone→retest
+- Zone navigation (← →) with context zoom (±20 candles) and 'show all' mode
+- Retest detail table with filtering by outcome and regime
+- Backend endpoint GET /api/training/review-data combining OHLCV + zones + retests
+- 14 integration tests for ShadowTrader, bridge.jsonl, and AutoProposer
+```
+
+---
+
 ## PREÁMBULO: CARTA A LILA — EL MANDATO DE LA CONSTRUCTORA
 
 Lila, esta versión del Blueprint no viene a explicarte quién eres. Viene a decirte qué debes **hacer**.
@@ -99,7 +200,7 @@ La *Simple Foundation Strategy* es el objetivo de construcción de Lila en v3. N
 [2] TripleCoincidenceDetector     ← ✅ OPERATIVO (Live Detection v3.1)
 [3] ZonePhysicsMonitor            ← ✅ OPERATIVO (Real-time micro-enrichment)
 [4] ShadowTrader / OrderManager   ← ✅ OPERATIVO (Dry Run + Multi-asset)
-[5] OracleTrainer (Meta-Labeling) ← ✅ OPERATIVO (Sharpe 1.13 / Causal Signature)
+[5] OracleTrainer (Meta-Labeling) ← ⚠️ FUNCIONAL CON DEFECTOS (4 bugs propios + 2 upstream. Sharpe 1.13 no verificable OOS — ver NOTA CRÍTICA Sección 5)
 [6] NexusGate (Dynamic Causal)    ← ✅ OPERATIVO (ΔCausal Real-time)
 [7] AutoProposer / Evolution      ← ✅ OPERATIVO (EvolutionOrchestrator Active)
 ```
@@ -571,7 +672,10 @@ La GUI de gestión de la Bóveda debe mostrar en tiempo real:
 
 El ATR (Average True Range) fue usado en v1/v2 como la unidad universal de todo: barreras, stops, take-profits, umbral de decisión. Esa postura era válida para temporalidades diarias y de 5 minutos con contexto de swing trading. **No es el motor apropiado para Scalping en 1–5 minutos.**
 
-En v3, el ATR mantiene su rol como **unidad de normalización y contexto de régimen**, pero cede el rol de motor primario de decisión a la **Trinidad de la Microestructura**:
+En v3, el ATR mantiene su rol como **unidad de normalización y contexto de régimen**, pero cede el rol de motor primario de decisión a la **Trinidad de la Microestructura**.
+
+> ⚠️ **ASPIRACIÓN vs REALIDAD (19 abril 2026):** El Oracle entrenado asigna ATR = 37.5% de feature importance — sigue siendo el factor dominante del modelo RF. La separación arquitectónica descrita a continuación es el diseño objetivo; el modelo entrenado actual no la refleja porque el dataset tiene solo 98 samples y las features de microestructura (OBI, CumDelta) aún están subrepresentadas.
+
 
 ```
 ╔════════════════════════════════════════════════════════════════╗
@@ -731,6 +835,50 @@ MicrostructureRecord(
 ## SECCIÓN 5: GLOSARIO DEL NORTE v3.0
 
 *Vocabulario canónico de la Constructora. Sin este lenguaje, los documentos del vault y las instrucciones del Mosaic Bridge son ruido.*
+
+---
+
+### NOTA CRÍTICA: Oracle Training y Data Curation (Sesión 17 Abril 2026)
+
+**Status actual del Oracle v3:**
+
+- **Modelo:** RandomForestClassifier(n_estimators=100, max_depth=5)
+- **Dataset:** 98 training samples (BOUNCE: 92 | BREAKOUT: 6)
+- **Train accuracy:** 97.96% — PERO el modelo predice clase mayoritaria
+- **Real performace:** Win rate 50%, Sharpe 1.13 — ⚠️ **DATO NO VERIFICABLE:** No hay train/test split (BUG-1). Las métricas OOS reportadas no provienen de un holdout real. El RF con 98 samples entrena y evalúa sobre el mismo dataset.
+
+**El problema arquitectónico:**
+
+El dataset es 94% BOUNCE. El modelo aprendió "casi siempre es BOUNCE". El accuracy no refleja discriminación real.
+
+**La solución — Training Review + Approval Workflow:**
+
+El flujo correcto es:
+
+```
+1. TripleCoincidenceDetector genera retests (labels crudos: 0.5% umbral)
+2. Training Review GUI muestra chart con zonas, retests, outcomes
+3. Operador revisa VISUALMENTE cada detección:
+   - ¿La zona tiene sentido? (acumulación visible)
+   - ¿El retest es legítimo? (precio vraiment volvió)
+   - ¿El outcome es correcto? (BOUNCE/BREAKOUT coherente)
+4. Operador approve/reject con training_approvals.jsonl
+   ⚠️ **NO IMPLEMENTADO:** Los endpoints approve/reject son stubs vacíos
+   (server.py líneas 2239-2250). No escriben en training_approvals.jsonl.
+   Este paso bloquea todo el flujo de curación. Ver BUG-8 en LILA_V4 §1.2.
+5. AutoProposer.analyze_drift() filtra solo samples aprobados
+   ⚠️ **IMPOSIBLE sin paso 4:** Si no hay training_approvals.jsonl
+   persistido, no hay nada que filtrar.
+6. Oracle.train_model() entrena con dataset limpio
+7. Modelo discrimina mejor porque etiquetas son correctas
+```
+
+**Labels crudos vs. etiquetas corregidas:**
+
+- **Crudo:** ¿Movió >0.5% en 10 velas? → BOUNCE
+- **Corregido:** ¿Llegó a TP (zone_top/bottom ± X%) antes de SL? → ALTA_CALIDAD
+
+Sin esta curación pre-entrenamiento, el modelo es tan bueno como el etiquetado fuente. Esto es irremplazable y depende de la expertise del operador.
 
 ---
 
