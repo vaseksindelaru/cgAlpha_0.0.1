@@ -1,0 +1,2 @@
+[console_scripts]
+cgalpha-v3-gui = cgalpha_v3.gui.server:main

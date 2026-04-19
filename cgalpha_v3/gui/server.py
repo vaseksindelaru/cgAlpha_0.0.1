@@ -50,6 +50,7 @@ HOST = os.getenv("CGV3_HOST", "127.0.0.1")
 PORT = int(os.getenv("CGV3_PORT", "5000"))
 
 app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path='')
+logger = logging.getLogger("server")
 
 # ---------------------------------------------------------------------------
 # Estado global y Managers
