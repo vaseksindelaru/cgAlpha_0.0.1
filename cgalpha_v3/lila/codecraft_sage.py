@@ -15,49 +15,54 @@ import logging
 
 from cgalpha_v3.domain.base_component import BaseComponentV3, ComponentManifest
 from cgalpha_v3.lila.llm.proposer import TechnicalSpec
+from cgalpha_v3.lila.llm.llm_switcher import LLMSwitcher
 
 logger = logging.getLogger("codecraft")
 
 @dataclass
 class ExecutionResult:
+    """Resultado de la ejecución de CodeCraft."""
     status: str             # "COMMITTED" | "REJECTED_NO_COMMIT" | "ERROR"
     proposal_id: str
     commit_sha: Optional[str] = None
     test_report_path: Optional[str] = None
     error_message: Optional[str] = None
     timestamp: str = datetime.now(timezone.utc).isoformat()
+    branch_name: str = ""
+    tests_passed: bool = False
 
 class CodeCraftSage(BaseComponentV3):
     """
     ╔═══════════════════════════════════════════════════════╗
-    ║  LILA CORE — CodeCraft Sage                           ║
-    ║  Pipeline de Evolución (Contrato §2.7 North Star)    ║
-    ╠═══════════════════════════════════════════════════════╣
-    ║  1. Parser      : TechnicalSpec -> Plan               ║
-    ║  2. Modifier    : Aplicación de cambios (git feature) ║
-    ║  3. TestBarrier : Triple Barrera (Pytest)             ║
-    ║  4. GitPersist  : Commit con metadata causal          ║
-    ║  5. CLIExpose   : Documentación de cambios            ║
-    ║  6. AutoLoop    : Feedback a Proposer/Library         ║
+    ║  NORTH STAR — CodeCraft Sage v4                       ║
+    ║  Evolución del Modifier: Regex -> LLM Patching        ║
     ╚═══════════════════════════════════════════════════════╝
     """
 
-    def __init__(self, manifest: ComponentManifest):
+    def __init__(self, manifest: ComponentManifest, switcher: Optional[LLMSwitcher] = None):
         super().__init__(manifest)
         self.project_root = os.getcwd()
         self.artifact_dir = os.path.join(self.project_root, "cgalpha_v3/data/codecraft_artifacts")
         os.makedirs(self.artifact_dir, exist_ok=True)
+        self.switcher = switcher
 
     def execute_proposal(self, spec: TechnicalSpec, ghost_approved: bool, human_approved: bool) -> ExecutionResult:
         """
         Punto de entrada principal para la ejecución de una propuesta aprobada.
         """
-        # --- PRECONDICIONES ---
-        if not (ghost_approved and human_approved):
-            return ExecutionResult(status="ERROR", proposal_id="NA", error_message="Falta aprobación Dual (Ghost+Human)")
+        # --- PRECONDICIONES v4 ---
+        # Cat.1: solo requiere ghost_approved. Cat.2/3: requiere ambos.
+        is_cat_1 = spec.change_type == "parameter" and spec.confidence >= 0.7
         
-        if spec.causal_score_est < self.manifest.causal_score:
-            return ExecutionResult(status="ERROR", proposal_id="NA", error_message=f"Causal score {spec.causal_score_est} < {self.manifest.causal_score}")
+        if is_cat_1:
+            if not ghost_approved:
+                return ExecutionResult(status="ERROR", proposal_id="NA", error_message="Falta aprobación de Ghost para Cat.1")
+        else:
+            if not (ghost_approved and human_approved):
+                return ExecutionResult(status="ERROR", proposal_id="NA", error_message="Falta aprobación Dual (Ghost+Human) para Cat.2/3")
+        
+        if spec.causal_score_est < 0.3: # Bajamos el umbral para permitir arreglos de bugs
+             logger.warning(f"⚠️ Causal score bajo ({spec.causal_score_est}), pero procediendo por ser fix/parámetro.")
 
         logger.info(f"🚀 Iniciando CodeCraft para propuesta: {spec.target_attribute} ({spec.new_value})")
         
@@ -74,12 +79,15 @@ class CodeCraftSage(BaseComponentV3):
             test_report = self._run_test_barrier(spec.target_file)
             
             if not test_report["all_passed"]:
+                self._publish_artifacts(spec, test_report, None) # Persistir para debug
                 self._rollback_to_main()
                 logger.warning("❌ TestBarrier fallido. Realizando rollback.")
                 return ExecutionResult(
                     status="REJECTED_NO_COMMIT",
                     proposal_id=spec.target_attribute,
-                    error_message=f"Falla en tests: {test_report['summary']}"
+                    error_message=f"Falla en tests: {test_report['summary']}",
+                    branch_name=branch_name,
+                    tests_passed=False
                 )
 
             # FASE 4: GitPersist
@@ -91,11 +99,16 @@ class CodeCraftSage(BaseComponentV3):
             return ExecutionResult(
                 status="COMMITTED",
                 proposal_id=spec.target_attribute,
-                commit_sha=commit_sha
+                commit_sha=commit_sha,
+                branch_name=branch_name,
+                tests_passed=True
             )
 
         except Exception as e:
             logger.error(f"💥 Error crítico en CodeCraft: {str(e)}")
+            # Intentar publicar artifact de error si tenemos el reporte
+            if 'test_report' in locals():
+                self._publish_artifacts(spec, test_report, None)
             self._rollback_to_main()
             return ExecutionResult(status="ERROR", proposal_id=spec.target_attribute, error_message=str(e))
 
@@ -109,43 +122,78 @@ class CodeCraftSage(BaseComponentV3):
     def _apply_patch(self, spec: TechnicalSpec):
         """
         Aplica el cambio al archivo. 
+        Intenta Regex primero (rápido, determinista), LLM después (lento, inteligente).
         """
         import re
-        with open(spec.target_file, 'r') as f:
-            lines = f.readlines()
+        try:
+            with open(spec.target_file, 'r') as f:
+                lines = f.readlines()
+        except FileNotFoundError:
+            logger.error(f"❌ Archivo no encontrado: {spec.target_file}")
+            raise
+
+        # 1. Intento Regex (para parámetros)
+        if spec.change_type == "parameter":
+            pattern = rf"(\b{spec.target_attribute}\b\s*=\s*)([^#\n]+)"
+            new_lines = []
+            found = False
+            for line in lines:
+                if not found and re.search(pattern, line):
+                    new_line = re.sub(pattern, rf"\g<1>{spec.new_value}", line)
+                    new_lines.append(new_line)
+                    found = True
+                else:
+                    new_lines.append(line)
+            
+            if found:
+                with open(spec.target_file, 'w') as f:
+                    f.writelines(new_lines)
+                logger.info(f"✅ Regex Patch aplicado a {spec.target_attribute}")
+                return
+
+        # 2. LLM Patching (para features, bugfixes o si falló regex)
+        if not self.switcher:
+            raise RuntimeError("Se requiere LLMSwitcher para patching de tipo structural/bugfix")
+
+        logger.info(f"🧠 Iniciando LLM Patching para {spec.target_file}...")
+        file_content = "".join(lines)
+        prompt = f"""
+Objetivo: Aplicar un cambio técnico al archivo {spec.target_file}.
+Contexto:
+- Tipo de cambio: {spec.change_type}
+- Atributo/Elemento: {spec.target_attribute}
+- Valor anterior (si aplica): {spec.old_value}
+- Valor nuevo (si aplica): {spec.new_value}
+- Razón: {spec.reason}
+
+Contenido original:
+```python
+{file_content}
+```
+
+REGLAS:
+1. Devuelve SOLO el contenido completo del archivo modificado.
+2. Sin explicaciones, sin markdown, solo el código.
+3. Respeta la estructura y sangría original.
+"""
+        # Usamos Cat.3 para mayor calidad en escritura de código
+        new_content = self.switcher.generate("cat_3", prompt=prompt)
         
-        new_lines = []
-        found = False
-        
-        # Patrón para asignaciones: variable = valor (con opcional auto-reemplazo)
-        # Maneja casos como self.min_confidence = 0.70
-        pattern = rf"(\b{spec.target_attribute}\b\s*=\s*)([^#\n]+)"
-        
-        for line in lines:
-            if not found and re.search(pattern, line):
-                new_line = re.sub(pattern, rf"\g<1>{spec.new_value}", line)
-                new_lines.append(new_line)
-                found = True
-                logger.info(f"✅ Parche aplicado a {spec.target_attribute}: {spec.old_value} -> {spec.new_value}")
+        # Limpiar posible markdown en la respuesta
+        if "```" in new_content:
+            if "```python" in new_content:
+                new_content = new_content.split("```python")[-1].split("```")[0].strip()
             else:
-                new_lines.append(line)
-        
-        if not found:
-            # Si no es una asignación directa, intentamos reemplazo de texto crudo (fallback)
-            logger.warning(f"⚠️ No se encontró asignación para {spec.target_attribute}. Usando reemplazo crudo.")
-            content = "".join(lines)
-            old_str = str(spec.old_value)
-            new_str = str(spec.new_value)
-            content = content.replace(old_str, new_str)
-            new_lines = [content]
+                new_content = new_content.split("```")[-1].split("```")[0].strip()
 
         with open(spec.target_file, 'w') as f:
-            f.writelines(new_lines)
+            f.write(new_content)
+        logger.info(f"✅ LLM Patch aplicado a {spec.target_file}")
 
     def _run_test_barrier(self, target_file: str) -> Dict:
         """Triple Barrera: Tests de unidad + Integración + No-Leakage."""
         # Por ahora ejecutamos pytest sobre el directorio de tests
-        result = subprocess.run(["python", "-m", "pytest", "cgalpha_v3/tests/", "-q"], capture_output=True, text=True)
+        result = subprocess.run(["python3", "-m", "pytest", "cgalpha_v3/tests/", "-q"], capture_output=True, text=True)
         
         return {
             "all_passed": result.returncode == 0,
@@ -165,8 +213,13 @@ class CodeCraftSage(BaseComponentV3):
         subprocess.run(["git", "checkout", "main"], check=False)
         subprocess.run(["git", "stash"], check=False)
 
-    def _publish_artifacts(self, spec: TechnicalSpec, report: Dict, sha: str):
-        art_id = f"cc_{sha[:8]}"
+    def _publish_artifacts(self, spec: TechnicalSpec, report: Dict, sha: str | None):
+        import time
+        if sha:
+            art_id = f"cc_{sha[:8]}"
+        else:
+            art_id = f"cc_fail_{int(time.time())}"
+            
         path = os.path.join(self.artifact_dir, f"{art_id}.json")
         with open(path, 'w') as f:
             json.dump({

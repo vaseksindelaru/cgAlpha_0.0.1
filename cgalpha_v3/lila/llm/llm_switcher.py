@@ -56,25 +56,30 @@ class LLMSwitcher:
         """Routing por defecto basado en las reglas del Prompt Fundacional §4."""
         return {
             "cat_1": [
-                ProviderConfig(name="ollama", priority=1, temperature=0.3, max_tokens=400),
-                ProviderConfig(name="openai", priority=2, temperature=0.3, max_tokens=400),
+                ProviderConfig(name="gemini", priority=1, temperature=0.3, max_tokens=400),
+                ProviderConfig(name="ollama", priority=2, temperature=0.3, max_tokens=400),
+                ProviderConfig(name="openai", priority=3, temperature=0.3, max_tokens=400),
             ],
             "cat_2": [
-                ProviderConfig(name="openai", priority=1, temperature=0.5, max_tokens=800),
-                ProviderConfig(name="zhipu", priority=2, temperature=0.5, max_tokens=800),
-                ProviderConfig(name="ollama", priority=3, temperature=0.5, max_tokens=800),
+                ProviderConfig(name="gemini", priority=1, temperature=0.5, max_tokens=1000),
+                ProviderConfig(name="openai", priority=2, temperature=0.5, max_tokens=1000),
+                ProviderConfig(name="zhipu", priority=3, temperature=0.5, max_tokens=1000),
+                ProviderConfig(name="ollama", priority=4, temperature=0.5, max_tokens=1000),
             ],
             "cat_3": [
-                ProviderConfig(name="openai", priority=1, temperature=0.7, max_tokens=2000),
-                ProviderConfig(name="zhipu", priority=2, temperature=0.7, max_tokens=2000),
+                ProviderConfig(name="gemini", priority=1, temperature=0.7, max_tokens=4000),
+                ProviderConfig(name="openai", priority=2, temperature=0.7, max_tokens=4000),
+                ProviderConfig(name="zhipu", priority=3, temperature=0.7, max_tokens=4000),
             ],
             "reflection": [
-                ProviderConfig(name="openai", priority=1, temperature=0.4, max_tokens=600),
-                ProviderConfig(name="ollama", priority=2, temperature=0.4, max_tokens=600),
+                ProviderConfig(name="gemini", priority=1, temperature=0.4, max_tokens=1000),
+                ProviderConfig(name="openai", priority=2, temperature=0.4, max_tokens=1000),
+                ProviderConfig(name="ollama", priority=3, temperature=0.4, max_tokens=1000),
             ],
             "whitepaper": [
-                ProviderConfig(name="openai", priority=1, temperature=0.6, max_tokens=2000),
-                ProviderConfig(name="zhipu", priority=2, temperature=0.6, max_tokens=2000),
+                ProviderConfig(name="gemini", priority=1, temperature=0.6, max_tokens=4000),
+                ProviderConfig(name="openai", priority=2, temperature=0.6, max_tokens=4000),
+                ProviderConfig(name="zhipu", priority=3, temperature=0.6, max_tokens=4000),
             ],
         }
 
