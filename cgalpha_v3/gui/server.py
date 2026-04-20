@@ -18,7 +18,7 @@ import random
 import re
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from functools import wraps
 from typing import Any
 from pathlib import Path
@@ -2360,14 +2360,46 @@ def get_training_review_data():
 @require_auth
 def approve_retest(retest_id):
     """Marcar un retest como aprobado para entrenamiento del Oracle."""
-    return jsonify({"status": "approved", "retest_id": retest_id})
+    try:
+        curation_file = Path("aipha_memory/evolutionary/retest_curation.jsonl")
+        curation_file.parent.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "retest_id": retest_id,
+            "decision": "APPROVED",
+            "source": "human"
+        }
+        with open(curation_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+        
+        _log_event(f"RETEST_CURATION: Approved {retest_id}", level="info")
+        return jsonify({"status": "approved", "retest_id": retest_id})
+    except Exception as e:
+        logger.error(f"Error in approve_retest: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @app.route('/api/training/retest/<retest_id>/reject', methods=['POST'])
 @require_auth
 def reject_retest(retest_id):
     """Marcar un retest como excluido del entrenamiento del Oracle."""
-    return jsonify({"status": "rejected", "retest_id": retest_id})
+    try:
+        curation_file = Path("aipha_memory/evolutionary/retest_curation.jsonl")
+        curation_file.parent.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "retest_id": retest_id,
+            "decision": "REJECTED",
+            "source": "human"
+        }
+        with open(curation_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+        
+        _log_event(f"RETEST_CURATION: Rejected {retest_id}", level="warning")
+        return jsonify({"status": "rejected", "retest_id": retest_id})
+    except Exception as e:
+        logger.error(f"Error in reject_retest: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 # ---------------------------------------------------------------------------
 # Arranque
