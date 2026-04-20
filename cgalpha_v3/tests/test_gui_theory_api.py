@@ -12,6 +12,40 @@ def _auth_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {server.AUTH_TOKEN}"}
 
 
+def _write(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+
+def _build_landscape_project(root: Path) -> None:
+    _write(
+        root / "config.py",
+        """
+SETTINGS = {
+    "volume_threshold": 1.2,
+    "quality_threshold": 0.45,
+    "min_confidence": 0.70,
+    "max_drawdown_session_pct": 5.0,
+    "max_position_size_pct": 2.0,
+    "max_signals_per_hour": 10,
+    "min_signal_quality_score": 0.65,
+    "lookback_candles": 30,
+    "atr_period": 14,
+    "atr_multiplier": 1.5,
+    "retest_timeout_bars": 40,
+    "slippage_bps": 2.0,
+    "fee_taker_pct": 0.04,
+    "cooldown_seconds": 300,
+    "retrain_interval_hours": 24,
+    "max_tokens": 1000
+}
+""",
+    )
+    _write(root / "lila/llm/proposer.py", "volume_threshold = 1.2\n")
+    _write(root / "application/change_proposer.py", "min_confidence = 0.7\n")
+    _write(root / "application/pipeline.py", "max_drawdown_session_pct = 5.0\n")
+
+
 @pytest.fixture(autouse=True)
 def reset_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(server, "MEMORY_DIR", tmp_path / "memory")
@@ -161,3 +195,30 @@ def test_p1_11_theory_live_connected_to_lila_snapshot(client):
     assert body["primary_source_gap_open"] is False
     assert len(body["recent_sources"]) == 2
     assert "backlog" in body
+
+
+def test_evolution_landscape_end_to_end_via_api(client, tmp_path: Path):
+    project_root = tmp_path / "project"
+    _build_landscape_project(project_root)
+
+    server._evolution_orchestrator.project_root = project_root
+    server._evolution_orchestrator.landscape_artifact_path = tmp_path / "data" / "parameter_landscape_map.json"
+    server._evolution_orchestrator.memory.MEMORY_DIR = tmp_path / "memory_entries"
+    server._evolution_orchestrator.memory.IDENTITY_DIR = tmp_path / "identity"
+
+    propose_resp = client.post(
+        "/api/evolution/landscape/propose",
+        json={"requested_by": "gui_test"},
+    )
+    assert propose_resp.status_code == 200
+    proposal_id = propose_resp.get_json()["proposal_id"]
+    assert proposal_id
+
+    approve_resp = client.post(f"/api/evolution/proposal/{proposal_id}/approve")
+    assert approve_resp.status_code == 200
+    assert approve_resp.get_json()["status"] == "SUCCESS"
+
+    artifact_resp = client.get("/api/evolution/landscape")
+    assert artifact_resp.status_code == 200
+    artifact = artifact_resp.get_json()
+    assert artifact["parameter_count"] >= 15

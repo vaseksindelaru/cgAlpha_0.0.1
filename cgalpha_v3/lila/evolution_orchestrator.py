@@ -23,6 +23,10 @@ from typing import Any, Optional
 
 from cgalpha_v3.domain.models.signal import MemoryLevel
 from cgalpha_v3.lila.llm.llm_switcher import LLMSwitcher
+from cgalpha_v3.lila.parameter_landscape import (
+    build_parameter_landscape_map,
+    load_parameter_landscape_map,
+)
 
 logger = logging.getLogger("evolution_orchestrator_v4")
 
@@ -88,6 +92,8 @@ class EvolutionOrchestratorV4:
     sage: Any = None  # CodeCraftSage
     assistant: Any = None  # LLMAssistant
     evolution_log_path: Path = field(default_factory=lambda: Path("cgalpha_v3/memory/evolution_log.jsonl"))
+    project_root: Path = field(default_factory=lambda: Path("cgalpha_v3"))
+    landscape_artifact_path: Path = field(default_factory=lambda: Path("cgalpha_v3/data/parameter_landscape_map.json"))
     _cooldown_seconds: int = 300  # 5 min between same-spec proposals
     _last_proposals: dict = field(default_factory=dict)
     _escalation_counts: dict = field(default_factory=dict)
@@ -101,8 +107,30 @@ class EvolutionOrchestratorV4:
         "cat_3_approved": 0,
         "cat_3_rejected": 0,
         "escalations": 0,
+        "landscape_generated": 0,
         "failures": 0,
     })
+
+    def propose_parameter_landscape(self, requested_by: str = "lila_v4") -> EvolutionResult:
+        """
+        Build a Cat.2 proposal for S3 Step 4 (Parameter Landscape Map).
+        """
+        from cgalpha_v3.lila.llm.proposer import TechnicalSpec
+
+        spec = TechnicalSpec(
+            change_type="optimization",
+            target_file=str(self.landscape_artifact_path),
+            target_attribute="parameter_landscape_map",
+            old_value=0.0,
+            new_value=1.0,
+            reason=(
+                "Escaneo determinista de parametros configurables para crear "
+                f"parameter_landscape_map.json (requested_by={requested_by})."
+            ),
+            causal_score_est=0.60,
+            confidence=0.80,
+        )
+        return self.process_proposal(spec)
 
     # ───────────────────────────────────────────────────────
     # CORE: CLASSIFY
@@ -422,13 +450,36 @@ class EvolutionOrchestratorV4:
         )
 
         logger.info(f"✅ Proposal {proposal_id} APPROVED by {approved_by}")
-        
+
+        spec_dict = data.get("spec", {})
+
+        if self._is_parameter_landscape_spec(spec_dict):
+            try:
+                artifact = self._generate_parameter_landscape(approved_by=approved_by)
+                data["landscape_artifact_path"] = str(self.landscape_artifact_path)
+                data["landscape_parameter_count"] = artifact.get("parameter_count", 0)
+                target.content = json.dumps(data)
+                self.memory._persist_memory_entry(target)
+                result.status = "SUCCESS"
+                result.tests_passed = True
+                logger.info(
+                    "🗺️ Parameter Landscape generado (%s parámetros): %s",
+                    artifact.get("parameter_count", 0),
+                    self.landscape_artifact_path,
+                )
+            except Exception as e:
+                result.status = "ERROR"
+                result.error = f"Landscape generation error: {str(e)}"
+                logger.error("💥 Error generando Parameter Landscape: %s", e)
+
+            self._append_evolution_log(None, result, approved_by=approved_by)
+            return result
+
         # Trigger Execution via Sage
         if self.sage:
             try:
                 # Reconstruir TechnicalSpec desde data
                 from cgalpha_v3.lila.llm.proposer import TechnicalSpec
-                spec_dict = data.get("spec", {})
                 spec = TechnicalSpec(**spec_dict)
                 
                 exec_result = self.sage.execute_proposal(
@@ -611,3 +662,61 @@ class EvolutionOrchestratorV4:
             except json.JSONDecodeError:
                 continue
         return result
+
+    def get_parameter_landscape(self) -> dict[str, Any] | None:
+        """Return latest parameter landscape artifact if present."""
+        return load_parameter_landscape_map(self.landscape_artifact_path)
+
+    @staticmethod
+    def _is_parameter_landscape_spec(spec_dict: dict[str, Any]) -> bool:
+        target_file = Path(str(spec_dict.get("target_file", ""))).name.lower()
+        target_attribute = str(spec_dict.get("target_attribute", "")).strip().lower()
+        change_type = str(spec_dict.get("change_type", "")).strip().lower()
+        is_landscape_target = (
+            target_file == "parameter_landscape_map.json"
+            or target_attribute == "parameter_landscape_map"
+        )
+        return is_landscape_target and change_type in {"optimization", "feature", "parameter"}
+
+    def _generate_parameter_landscape(self, approved_by: str) -> dict[str, Any]:
+        """
+        Generate and persist the Parameter Landscape artifact (S3 Step 4).
+        """
+        artifact = build_parameter_landscape_map(
+            project_root=self.project_root,
+            artifact_path=self.landscape_artifact_path,
+            switcher=self.switcher,
+            use_llm=False,
+        )
+
+        self._stats["landscape_generated"] += 1
+
+        if self.memory:
+            entry = self.memory.ingest_raw(
+                content=json.dumps({
+                    "type": "parameter_landscape_map",
+                    "artifact_path": str(self.landscape_artifact_path),
+                    "parameter_count": artifact.get("parameter_count", 0),
+                    "generated_at": artifact.get("generated_at"),
+                    "approved_by": approved_by,
+                }),
+                field="architect",
+                tags=["evolution", "cat_2", "landscape", "artifact"],
+            )
+            self.memory.promote(
+                entry_id=entry.entry_id,
+                target_level=MemoryLevel.NORMALIZED,
+                approved_by="auto",
+            )
+            self.memory.promote(
+                entry_id=entry.entry_id,
+                target_level=MemoryLevel.FACTS,
+                approved_by="Lila",
+            )
+            self.memory.promote(
+                entry_id=entry.entry_id,
+                target_level=MemoryLevel.RELATIONS,
+                approved_by="Lila",
+            )
+
+        return artifact

@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from cgalpha_v3.domain.models.signal import MemoryLevel
 from cgalpha_v3.lila.evolution_orchestrator import (
     EvolutionOrchestratorV4,
     EvolutionResult,
@@ -31,6 +32,41 @@ class MockSpec:
     reason: str = "test"
     causal_score_est: float = 0.8
     confidence: float = 0.85
+
+
+def _write(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+
+def _build_mock_project(root: Path) -> None:
+    _write(
+        root / "config.py",
+        """
+CFG = {
+    "volume_threshold": 1.2,
+    "quality_threshold": 0.45,
+    "min_confidence": 0.70,
+    "max_drawdown_session_pct": 5.0,
+    "max_position_size_pct": 2.0,
+    "max_signals_per_hour": 10,
+    "min_signal_quality_score": 0.65,
+    "lookback_candles": 30,
+    "atr_period": 14,
+    "atr_multiplier": 1.5,
+    "retest_timeout_bars": 40,
+    "slippage_bps": 2.0,
+    "fee_taker_pct": 0.04,
+    "cooldown_seconds": 300,
+    "retrain_interval_hours": 24,
+    "max_tokens": 1000
+}
+""",
+    )
+    _write(root / "lila/llm/proposer.py", "volume_threshold = 1.2\n")
+    _write(root / "application/change_proposer.py", "min_confidence = 0.7\n")
+    _write(root / "application/pipeline.py", "max_drawdown_session_pct = 5.0\n")
+    _write(root / "data/phase1_results/auto_proposer_output.json", "{\"volume_threshold\": 1.2}")
 
 
 # ───────────────────────────────────────────────
@@ -247,3 +283,34 @@ def test_evolution_result_dataclass():
     assert r.category == 1
     assert r.status == "APPLIED"
     assert r.timestamp  # auto-set
+
+
+def test_landscape_proposal_generates_artifact_on_approval(tmp_path: Path):
+    memory = MemoryPolicyEngine()
+    memory.MEMORY_DIR = tmp_path / "memory_entries"
+    memory.IDENTITY_DIR = tmp_path / "identity"
+
+    project_root = tmp_path / "project"
+    _build_mock_project(project_root)
+    artifact_path = tmp_path / "data" / "parameter_landscape_map.json"
+
+    orch = EvolutionOrchestratorV4(
+        memory=memory,
+        evolution_log_path=tmp_path / "evolution_log.jsonl",
+        project_root=project_root,
+        landscape_artifact_path=artifact_path,
+    )
+
+    queued = orch.propose_parameter_landscape(requested_by="test")
+    assert queued.category == 2
+    assert queued.status == "PENDING_APPROVAL"
+
+    approved = orch.approve_proposal(queued.proposal_id)
+    assert approved.status == "SUCCESS"
+    assert artifact_path.exists()
+
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert artifact["parameter_count"] >= 15
+
+    rel_entries = memory.list_entries(level=MemoryLevel.RELATIONS, limit=200)
+    assert any("parameter_landscape_map" in entry.content for entry in rel_entries)

@@ -2103,6 +2103,31 @@ def get_evolution_proposals():
     """Lista propuestas de evolución pendientes (Cat.2/3)."""
     return jsonify(_evolution_orchestrator.get_pending_summary())
 
+@app.route("/api/evolution/landscape/propose", methods=["POST"])
+def propose_parameter_landscape():
+    """
+    Crea propuesta Cat.2 para el Parameter Landscape Map (S3 Paso 4).
+    Requiere aprobación posterior via /api/evolution/proposal/<id>/approve.
+    """
+    data = request.json or {}
+    requested_by = data.get("requested_by", "operator")
+    result = _evolution_orchestrator.propose_parameter_landscape(requested_by=requested_by)
+    return jsonify({
+        "status": result.status,
+        "category": result.category,
+        "proposal_id": result.proposal_id,
+        "spec_summary": result.spec_summary,
+        "error": result.error,
+    })
+
+@app.route("/api/evolution/landscape", methods=["GET"])
+def get_parameter_landscape():
+    """Devuelve el último Parameter Landscape Map generado."""
+    artifact = _evolution_orchestrator.get_parameter_landscape()
+    if artifact is None:
+        return jsonify({"error": "parameter_landscape_map_not_found"}), 404
+    return jsonify(artifact)
+
 @app.route("/api/evolution/proposal/<proposal_id>/approve", methods=["POST"])
 def approve_evolution_proposal(proposal_id):
     """Aprueba una propuesta y dispara ejecución via Sage."""
