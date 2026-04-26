@@ -82,7 +82,8 @@ function startPolling() {
     fetchLearningMemoryStatus();
     fetchLiveSignals();
     fetchLivePortfolio();
-    fetchMarketPulse(); // Nuevo poll de alta frecuencia
+    fetchMarketPulse();
+    fetchEvolutionHeartbeat(); // Novedad v4
     pollTimer = setInterval(() => {
         fetchStatus();
         fetchEvents();
@@ -96,6 +97,7 @@ function startPolling() {
         fetchLearningMemoryStatus();
         fetchLiveSignals();
         fetchLivePortfolio();
+        fetchEvolutionHeartbeat(); // Novedad v4
         renderFooterTs();
     }, POLL_MS);
 
@@ -399,6 +401,40 @@ async function fetchMarketPulse() {
         const d = await apiFetch("/api/live/market_pulse?symbol=BTCUSDT");
         updateMarketLive(d);
     } catch (e) { console.warn("Market pulse error:", e); }
+}
+
+// ── EVOLUTION PULSE (v4) ────────────────────────────────
+async function fetchEvolutionHeartbeat() {
+    try {
+        const d = await apiFetch("/api/evolution/heartbeat");
+        updateEvolutionHeartbeat(d);
+    } catch (e) { console.warn("Evolution heartbeat error:", e); }
+}
+
+function updateEvolutionHeartbeat(d) {
+    const statusPill = document.getElementById("evo-hb-status");
+    if (!statusPill) return;
+
+    const status = (d.status || "offline").toLowerCase();
+    statusPill.textContent = status;
+    statusPill.className = "pill " + (status === "ok" ? "pill-running" : "pill-idle");
+
+    setText("evo-hb-cycle", d.cycle || 0);
+    setText("evo-hb-uptime", `${d.uptime_minutes || 0} min`);
+    if (d.latest_price) {
+        setText("evo-hb-price", `$${d.latest_price.toLocaleString()}`);
+    }
+
+    const oracleTrained = d.oracle_trained;
+    const oracleEl = document.getElementById("evo-hb-oracle");
+    if (oracleEl) {
+        oracleEl.textContent = oracleTrained ? "✅ Trained" : "⏳ Placeholder";
+        oracleEl.style.color = oracleTrained ? "var(--accent)" : "var(--text-muted)";
+    }
+
+    setText("evo-hb-result", d.result || "—");
+    setText("evo-hb-trades", d.active_shadow_trades || 0);
+    setText("evo-hb-bridge", d.bridge_entries || 0);
 }
 
 // ── MARKET LIVE ────────────────────────────────────────

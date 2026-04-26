@@ -2410,6 +2410,26 @@ def get_evolution_stats():
         "routing": _llm_switcher.get_routing_table() if _llm_switcher else {}
     })
 
+@app.route("/api/evolution/heartbeat", methods=["GET"])
+def get_evolution_heartbeat():
+    """Retorna el pulso de la ejecución continua de 24h desde scripts/run_24h.py."""
+    heartbeat_path = project_root / "execution_24h_heartbeat.json"
+    if not heartbeat_path.exists():
+        return jsonify({
+            "status": "OFFLINE",
+            "message": "En espera de latido de run_24h.py...",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "cycle": 0
+        })
+    
+    try:
+        with open(heartbeat_path, "r") as f:
+            data = json.load(f)
+        return jsonify(data)
+    except Exception as e:
+        logger.error(f"Error reading heartbeat: {e}")
+        return jsonify({"status": "ERROR", "message": str(e)}), 500
+
 @app.route("/learning/operator", methods=["GET"])
 def get_whitepaper_html():
     """Renderiza el WHITEPAPER.md como HTML para el operador."""
