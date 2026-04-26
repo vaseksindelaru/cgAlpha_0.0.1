@@ -17,6 +17,7 @@ class OraclePrediction:
     confidence: float        # 0-1 (predict_proba del modelo)
     suggested_action: str    # "EXECUTE" | "IGNORE"
     estimated_delta_causal: float
+    is_placeholder: bool = False  # True cuando no hay modelo entrenado
 
 class OracleTrainer_v3(BaseComponentV3):
     """
@@ -204,6 +205,7 @@ class OracleTrainer_v3(BaseComponentV3):
                 confidence=0.85,
                 suggested_action="EXECUTE",
                 estimated_delta_causal=0.74,
+                is_placeholder=True,
             )
 
         row = {
