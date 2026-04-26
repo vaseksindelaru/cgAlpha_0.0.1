@@ -1494,6 +1494,29 @@ def experiment_propose() -> ResponseReturnValue:
             "walk_forward_windows": proposal.backtesting.get("walk_forward_windows", 3),
         },
     )
+
+    # ── ISLAND BRIDGE: ChangeProposer → Orchestrator ──
+    # Register the proposal in the Evolution Orchestrator for tracking.
+    try:
+        from cgalpha_v3.lila.llm.proposer import TechnicalSpec
+        spec = TechnicalSpec(
+            change_type="feature",
+            target_file="cgalpha_v3/application/pipeline.py",
+            target_attribute=f"proposal_{proposal.proposal_id}",
+            old_value=0.0,
+            new_value=1.0,
+            reason=f"ChangeProposer: {proposal.hypothesis[:120]}",
+            causal_score_est=0.60,
+            confidence=0.70,
+        )
+        evo_result = _evolution_orchestrator.process_proposal(spec)
+        logger.info(
+            f"🔗 Island Bridge: ChangeProposer → Orchestrator "
+            f"(Cat.{evo_result.category}, status={evo_result.status})"
+        )
+    except Exception as bridge_exc:
+        logger.warning(f"⚠️ Island Bridge (ChangeProposer) failed: {bridge_exc}")
+
     return jsonify(_serialize_proposal(proposal))
 
 
@@ -1565,6 +1588,38 @@ def experiment_run() -> ResponseReturnValue:
             "no_leakage_checked": result.no_leakage_checked,
         },
     )
+
+    # ── ISLAND BRIDGE: ExperimentRunner → Orchestrator ──
+    # Route experiment results to Evolution Orchestrator for classification.
+    # Closes the feedback loop: ChangeProposer → Experiment → Orchestrator → Sage
+    try:
+        from cgalpha_v3.lila.llm.proposer import TechnicalSpec
+        sharpe = result.metrics.get("sharpe_neto", 0.0)
+        net_return = result.metrics.get("net_return_pct", 0.0)
+        causal_est = min(max(sharpe / 3.0, 0.0), 1.0)  # normalize to 0-1
+        spec = TechnicalSpec(
+            change_type="optimization",
+            target_file="cgalpha_v3/application/pipeline.py",
+            target_attribute="experiment_feedback",
+            old_value=0.0,
+            new_value=round(net_return, 4),
+            reason=(
+                f"Experiment {result.experiment_id}: "
+                f"Sharpe={sharpe:.2f}, NetReturn={net_return:.2f}%, "
+                f"WF_windows={len(result.walk_forward_windows)}, "
+                f"NoLeakage={'✅' if result.no_leakage_checked else '❌'}"
+            ),
+            causal_score_est=round(causal_est, 2),
+            confidence=0.75 if result.no_leakage_checked and sharpe > 0 else 0.50,
+        )
+        evo_result = _evolution_orchestrator.process_proposal(spec)
+        logger.info(
+            f"🔗 Island Bridge: Experiment → Orchestrator "
+            f"(Cat.{evo_result.category}, status={evo_result.status})"
+        )
+    except Exception as bridge_exc:
+        logger.warning(f"⚠️ Island Bridge failed (non-blocking): {bridge_exc}")
+
     return jsonify(_serialize_experiment_result(result))
 
 
