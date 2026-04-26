@@ -40,6 +40,7 @@ class BinanceWebSocketManager(BaseComponentV3):
         # Buffers de tiempo real
         self.order_book_state: Dict[str, Dict] = {}
         self.last_trades: List[Dict] = []
+        self.cumulative_delta: Dict[str, float] = {}  # Tracks net taker buy/sell
         self.callbacks: List[Callable] = []
 
     def add_callback(self, callback: Callable[[Dict], None]):
@@ -68,13 +69,14 @@ class BinanceWebSocketManager(BaseComponentV3):
 
     async def _main_loop(self):
         """Loop principal con reconexión automática."""
-        # Suscribirse a bookTicker y aggTrade
+        # Suscribirse a bookTicker y aggTrade (Futures URL format)
         streams = []
         for s in self.symbols:
-            streams.append(f"{s}@bookTicker")
-            streams.append(f"{s}@aggTrade")
+            streams.append(f"{s.lower()}@bookTicker")
+            streams.append(f"{s.lower()}@aggTrade")
         
-        url = f"{self.base_url}/{'/'.join(streams)}" if len(streams) > 1 else f"{self.base_url}/{streams[0]}"
+        # Format: /stream?streams=stream1/stream2/...
+        url = f"{self.base_url.replace('/ws', '/stream')}?streams={'/'.join(streams)}"
         
         while self.is_running:
             try:
@@ -90,10 +92,18 @@ class BinanceWebSocketManager(BaseComponentV3):
 
     async def _handle_message(self, data: Dict):
         """Procesa y enruta los mensajes del WebSocket."""
+        # logger.debug(f"WS Msg: {data}")
         event_type = data.get('e')
-        symbol = data.get('s')
+        
+        # Combined stream wraps data in {'stream': '...', 'data': {...}}
+        if 'stream' in data and 'data' in data:
+            stream_name = data['stream']
+            data = data['data']
+            event_type = data.get('e')
 
-        if not event_type and 'b' in data: # bookTicker no tiene campo 'e' en algunos streams combinados
+        symbol = (data.get('s') or "").upper()
+
+        if ('b' in data and 'a' in data) or event_type == 'bookTicker':
             # bookTicker update (OBI)
             self.order_book_state[symbol] = {
                 "bid": float(data['b']),
@@ -111,6 +121,11 @@ class BinanceWebSocketManager(BaseComponentV3):
                 "timestamp": data['T']
             }
             self.last_trades.append(trade_data)
+            
+            # Cumulative Delta calculation:
+            delta = trade_data['qty'] if not trade_data['is_buyer_maker'] else -trade_data['qty']
+            self.cumulative_delta[symbol] = self.cumulative_delta.get(symbol, 0.0) + delta
+             
             if len(self.last_trades) > 1000:
                 self.last_trades.pop(0)
 
@@ -128,7 +143,12 @@ class BinanceWebSocketManager(BaseComponentV3):
         
         total = state['bid_qty'] + state['ask_qty']
         if total == 0: return 0.0
+        # OBI = (bid_qty - ask_qty) / (bid_qty + ask_qty)
         return (state['bid_qty'] - state['ask_qty']) / total
+
+    def get_cumulative_delta(self, symbol: str) -> float:
+        """Retorna el delta acumulado para el símbolo."""
+        return self.cumulative_delta.get(symbol.upper(), 0.0)
 
     @classmethod
     def create_default(cls, symbol: str = "BTCUSDT"):

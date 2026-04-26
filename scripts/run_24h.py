@@ -23,6 +23,8 @@ import time
 import traceback
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import threading
+import asyncio
 
 # ── Project root ──
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -37,6 +39,7 @@ from cgalpha_v3.application.pipeline import TripleCoincidencePipeline
 from cgalpha_v3.lila.evolution_orchestrator import EvolutionOrchestratorV4
 from cgalpha_v3.lila.codecraft_sage import CodeCraftSage
 from cgalpha_v3.learning.memory_policy import MemoryPolicyEngine
+from cgalpha_v3.infrastructure.binance_websocket_manager import BinanceWebSocketManager
 
 # ── Logging ──
 LOG_FILE = PROJECT_ROOT / "execution_24h.log"
@@ -95,7 +98,7 @@ def fetch_recent_klines(
     return df
 
 
-def enrich_klines_for_pipeline(df: pd.DataFrame) -> pd.DataFrame:
+def enrich_klines_for_pipeline(df: pd.DataFrame, obi: float = 0.0, delta: float = 0.0) -> pd.DataFrame:
     """Add microstructure columns needed by TripleCoincidenceDetector."""
     if df.empty:
         return df
@@ -103,11 +106,13 @@ def enrich_klines_for_pipeline(df: pd.DataFrame) -> pd.DataFrame:
     # VWAP approximation: (H+L+C)/3 * Volume weighted
     df["vwap"] = (df["high"] + df["low"] + df["close"]) / 3.0
 
-    # OBI placeholder (no orderbook data from REST)
+    # OBI and Delta (use real values for the LATEST candle)
     df["obi_10"] = 0.0
-
-    # Cumulative delta placeholder
     df["cumulative_delta"] = 0.0
+    
+    # Stamp real values on the last row
+    df.loc[df.index[-1], "obi_10"] = obi
+    df.loc[df.index[-1], "cumulative_delta"] = delta
 
     # ATR(14)
     if len(df) >= 14:
@@ -195,11 +200,24 @@ def main():
         traceback.print_exc()
         sys.exit(1)
 
+    # ── WebSocket Manager (Hybrid Data) ──
+    ws_manager = BinanceWebSocketManager.create_default(symbol=args.symbol)
+    
+    def run_ws_bridge():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(ws_manager.start())
+        loop.run_forever()
+
+    ws_thread = threading.Thread(target=run_ws_bridge, daemon=True)
+    ws_thread.start()
+    logger.info(f"📡 Hybrid WS Bridge active for {args.symbol}")
+
     cycle = 0
     total_retests = 0
     total_trades = 0
+    errors = 1  # Start at 1 to avoid ZeroDivision if crash (joking, logic below)
     errors = 0
-
     while time.time() - _start_time < duration_s and not _shutdown:
         cycle += 1
         cycle_start = time.time()
@@ -220,9 +238,13 @@ def main():
                 time.sleep(args.interval)
                 continue
 
-            df = enrich_klines_for_pipeline(df)
+            # Real-time snapshots from WS
+            current_obi = ws_manager.get_current_obi(args.symbol)
+            current_delta = ws_manager.get_cumulative_delta(args.symbol)
+
+            df = enrich_klines_for_pipeline(df, obi=current_obi, delta=current_delta)
             latest_price = df["close"].iloc[-1]
-            logger.info(f"📊 Fetched {len(df)} klines. Latest price: {latest_price:.2f}")
+            logger.info(f"📊 Fetched {len(df)} klines. Latest price: {latest_price:.2f} | OBI: {current_obi:.2f} | Δ: {current_delta:.1f}")
 
             # 2. Drive the detector directly with REST klines
             #    (bypasses BinanceVisionFetcher which only has yesterday's data)
